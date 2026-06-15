@@ -17,14 +17,17 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
  * CRUD operations for personal memories.
  *
  * <p>On write ({@code POST}), content is embedded via Ollama and stored alongside the
- * 384-dimension vector for future semantic similarity retrieval. The embedding call is
- * synchronous — the response is returned only after the vector is persisted.</p>
+ * 384-dimension vector for future semantic similarity retrieval. When the embedding service
+ * is disabled ({@code aether.core.embedding.enabled=false}), a zero vector is stored and
+ * the memory is still persisted — semantic search will be non-functional until embeddings
+ * are re-generated.</p>
  */
 @RestController
 @RequestMapping("/api/v1/users/{userId}/memories")
@@ -33,10 +36,10 @@ public class PersonalMemoryController {
     private static final Logger log = LoggerFactory.getLogger(PersonalMemoryController.class);
 
     private final PersonalMemoryStore memoryStore;
-    private final PersonalEmbeddingService embeddingService;
+    private final Optional<PersonalEmbeddingService> embeddingService;
 
     public PersonalMemoryController(PersonalMemoryStore memoryStore,
-                                    PersonalEmbeddingService embeddingService) {
+                                    Optional<PersonalEmbeddingService> embeddingService) {
         this.memoryStore = memoryStore;
         this.embeddingService = embeddingService;
     }
@@ -71,10 +74,11 @@ public class PersonalMemoryController {
         }
 
         var memory = PersonalMemory.create(userId, type, content);
-        var embedding = embeddingService.embed(content);
+        var embedding = embeddingService.map(svc -> svc.embed(content)).orElseGet(() -> new float[384]);
         memoryStore.save(memory, embedding);
 
-        log.info("Stored {} memory id={} userId={}", type, memory.id(), userId);
+        log.info("Stored {} memory id={} userId={} embeddingEnabled={}", type, memory.id(), userId,
+                embeddingService.isPresent());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(Map.of("memoryId", memory.id().toString(), "type", type.name()));
     }

@@ -73,16 +73,8 @@ public class PGVectorPersonalMemoryStore implements PersonalMemoryStore {
                 .addValue("userId", userId)
                 .addValue("query", toVectorString(queryEmbedding))
                 .addValue("limit", limit);
-        return jdbc.query(sql, params, (rs, row) -> new PersonalMemory(
-                UUID.fromString(rs.getString("id")),
-                rs.getString("user_id"),
-                MemoryType.valueOf(rs.getString("memory_type")),
-                rs.getString("content"),
-                rs.getDouble("strength"),
-                rs.getInt("access_count"),
-                rs.getTimestamp("created_at").toInstant(),
-                rs.getTimestamp("last_accessed_at").toInstant()
-        ));
+        var memories = jdbc.query(sql, params, this::mapRow);
+        return memories.stream().map(this::reinforceAndPersist).toList();
     }
 
     @Override
@@ -99,7 +91,31 @@ public class PGVectorPersonalMemoryStore implements PersonalMemoryStore {
                 .addValue("userId", userId)
                 .addValue("memoryType", type.name())
                 .addValue("limit", limit);
-        return jdbc.query(sql, params, (rs, row) -> new PersonalMemory(
+        var memories = jdbc.query(sql, params, this::mapRow);
+        return memories.stream().map(this::reinforceAndPersist).toList();
+    }
+
+    private PersonalMemory reinforceAndPersist(PersonalMemory memory) {
+        var reinforced = memory.reinforce();
+        var sql = """
+                UPDATE personal_memories
+                SET strength = :strength, access_count = :accessCount,
+                    last_accessed_at = :lastAccessedAt
+                WHERE id = :id AND user_id = :userId
+                """;
+        var params = new MapSqlParameterSource()
+                .addValue("id", reinforced.id())
+                .addValue("userId", reinforced.userId())
+                .addValue("strength", reinforced.strength())
+                .addValue("accessCount", reinforced.accessCount())
+                .addValue("lastAccessedAt", Timestamp.from(reinforced.lastAccessedAt()));
+        jdbc.update(sql, params);
+        log.debug("Reinforced memory id={} strength={}", reinforced.id(), reinforced.strength());
+        return reinforced;
+    }
+
+    private PersonalMemory mapRow(java.sql.ResultSet rs, int row) throws java.sql.SQLException {
+        return new PersonalMemory(
                 UUID.fromString(rs.getString("id")),
                 rs.getString("user_id"),
                 MemoryType.valueOf(rs.getString("memory_type")),
@@ -108,7 +124,7 @@ public class PGVectorPersonalMemoryStore implements PersonalMemoryStore {
                 rs.getInt("access_count"),
                 rs.getTimestamp("created_at").toInstant(),
                 rs.getTimestamp("last_accessed_at").toInstant()
-        ));
+        );
     }
 
     @Override

@@ -18,7 +18,7 @@
 
 **Sister repository:** [`suplab/aether-grid`](https://github.com/suplab/aether-grid) — the enterprise agent mesh that consumes Core's `GET /api/v1/personal-context/{tenantId}/{userId}` endpoint via `AetherCoreHttpAdapter`.
 
-**Current status:** Phase 0 complete (scaffold). Active phase: Phase 1 — Personal Memory Engine.
+**Current status:** Phases 0–1 complete. Active phase: Phase 2 — Cognitive Session Management.
 
 **One runnable application:**
 - `core-api` — Personal Cognitive Engine API (port 8082)

@@ -1,9 +1,12 @@
 package com.suplab.aether.core.api.config;
 
+import com.suplab.aether.core.memory.context.DefaultPersonalContextProvider;
 import com.suplab.aether.core.memory.embedding.PersonalEmbeddingService;
 import com.suplab.aether.core.memory.store.PGVectorPersonalMemoryStore;
+import com.suplab.aether.core.ports.PersonalContextProvider;
 import com.suplab.aether.core.ports.PersonalMemoryStore;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -11,17 +14,15 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 /**
  * Spring configuration for Aether Core API beans.
  *
- * <p>Wires the pgvector memory store and Ollama embedding service using constructor
- * injection. All infrastructure beans are created here — never via field {@code @Autowired}.</p>
+ * <p>Wires the pgvector memory store, Ollama embedding service, and the personal context
+ * provider using constructor injection. All beans are declared here — never via field
+ * {@code @Autowired}.</p>
  */
 @Configuration
 public class CoreApiConfig {
 
     /**
      * Creates the personal memory store backed by pgvector.
-     *
-     * @param jdbc the named-parameter JDBC template (auto-configured from datasource)
-     * @return a {@link PersonalMemoryStore} using the {@code personal_memories} table
      */
     @Bean
     public PersonalMemoryStore personalMemoryStore(NamedParameterJdbcTemplate jdbc) {
@@ -29,13 +30,28 @@ public class CoreApiConfig {
     }
 
     /**
-     * Creates the embedding service that calls Ollama's {@code /api/embeddings} endpoint.
+     * Creates the context provider that assembles personal context snapshots for Grid.
      *
-     * @param ollamaUrl the Ollama base URL (default: {@code http://localhost:11434})
-     * @param model     the embedding model name (default: {@code all-minilm})
-     * @return a {@link PersonalEmbeddingService} producing 384-dim vectors
+     * @param memoryStore       the store to retrieve memories from
+     * @param defaultMemoryLimit max memories per type fetched per context request
      */
     @Bean
+    public PersonalContextProvider personalContextProvider(
+            PersonalMemoryStore memoryStore,
+            @Value("${aether.core.context.memory-limit:5}") int defaultMemoryLimit) {
+        return new DefaultPersonalContextProvider(memoryStore, defaultMemoryLimit);
+    }
+
+    /**
+     * Creates the embedding service that calls Ollama's {@code /api/embeddings} endpoint.
+     *
+     * <p>Conditional on {@code aether.core.embedding.enabled=true} (default). Set to
+     * {@code false} in environments where Ollama is unavailable — memories will be saved
+     * with zero vectors and semantic similarity search will be non-functional, but all
+     * other endpoints remain operational.</p>
+     */
+    @Bean
+    @ConditionalOnProperty(name = "aether.core.embedding.enabled", havingValue = "true", matchIfMissing = true)
     public PersonalEmbeddingService personalEmbeddingService(
             @Value("${aether.core.ollama.base-url:http://localhost:11434}") String ollamaUrl,
             @Value("${aether.core.embedding.model:all-minilm}") String model) {

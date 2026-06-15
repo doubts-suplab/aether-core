@@ -5,13 +5,13 @@
 
 ---
 
-**Active Phase:** Phase 1 — Personal Memory Engine
+**Active Phase:** Phase 2 — Cognitive Session Management
 
 | Phase | Name | Status | Sessions |
 |---|---|---|---|
 | 0 | Scaffold | ✅ Complete | 1 |
-| 1 | Personal Memory Engine | 🔄 In Progress | — |
-| 2 | Cognitive Session Management | ⏳ Planned | — |
+| 1 | Personal Memory Engine | ✅ Complete | 2 |
+| 2 | Cognitive Session Management | 🔄 In Progress | — |
 | 3 | GDPR + Right to Erasure | ⏳ Planned | — |
 | 4 | Grid Feedback Loop (Kafka) | ⏳ Planned | — |
 | 5 | Memory Decay + Reinforcement Scheduler | ⏳ Planned | — |
@@ -21,7 +21,7 @@
 
 ## Phase 0 — Scaffold ✅
 
-**Commit:** `chore(core): initial scaffold — independent Maven multi-module project`
+**Commit:** `feat(core): scaffold Aether Core — personal cognitive engine sister project`
 
 ### What was done
 
@@ -54,7 +54,7 @@
 - `docker/docker-compose.yml`: postgres-core (port 5433) + aether-core (port 8082)
 
 **`.claude/` setup:**
-- 19 agent definitions (copied from eeik-bootstrap / aether-grid)
+- 19 agent definitions
 - 7 memory files seeded with Core context
 - `CLAUDE.md` project brief
 
@@ -62,4 +62,61 @@
 - `README.md`, `docs/index.html`, `docs/architecture.md`, `docs/roadmap.md`, `docs/progress.md`
 - GitHub Actions: `ci.yml`, `quality-gate.yml`
 
-### Files created: 48
+### Files created: 57
+
+---
+
+## Phase 1 — Personal Memory Engine ✅
+
+**Commit:** `feat(core): Phase 1 — personal memory engine with reinforce-on-read and context provider`
+
+### What was done
+
+**Reinforce-on-read in `PGVectorPersonalMemoryStore`:**
+- `findSimilar()` and `findByType()` now call `memory.reinforce()` on each returned result
+- Reinforced state (strength +0.1 capped at 1.0, accessCount +1, lastAccessedAt = now) persisted immediately via UPDATE
+- Extracted `mapRow()` helper to eliminate duplication
+- `reinforceAndPersist()` private method handles the UPDATE without re-embedding
+
+**`DefaultPersonalContextProvider` — new class in `core-memory`:**
+- `com.suplab.aether.core.memory.context.DefaultPersonalContextProvider`
+- Implements `PersonalContextProvider` port from `core-domain`
+- Fetches EPISODIC + SEMANTIC memories for summaries, EMOTIONAL memories for state
+- Returns `Optional.empty()` when user has zero memories across all types
+- Engagement score = average of episodic memory strengths (default 0.5 when no episodic memories)
+
+**`PersonalContextController` — refactored to use `PersonalContextProvider` port:**
+- Removed direct `PersonalMemoryStore` and `PersonalEmbeddingService` dependencies from controller
+- Now injects only `PersonalContextProvider` — single responsibility
+- Falls back to `emptyContext()` (NEUTRAL, 0.5) when provider returns empty
+- Always HTTP 200 — Grid callers always receive a usable response
+
+**`CoreApiConfig` — updated:**
+- `PersonalContextProvider` bean wired: `DefaultPersonalContextProvider(memoryStore, defaultMemoryLimit)`
+- `@ConditionalOnProperty(name = "aether.core.embedding.enabled", havingValue = "true", matchIfMissing = true)` on embedding bean
+- `aether.core.context.memory-limit` config property (default 5)
+
+**`PersonalMemoryController` — optional embedding:**
+- `Optional<PersonalEmbeddingService>` via constructor injection
+- When embedding disabled (`aether.core.embedding.enabled=false`), stores zero-vector — other endpoints remain functional
+
+**Unit tests — 18 tests, all green:**
+- `PersonalMemoryTest` (12 tests): `create()`, `reinforce()`, validation, all MemoryType values
+- `DefaultPersonalContextProviderTest` (6 tests): empty/non-empty contexts, emotional state derivation, engagement score calculation, user/tenant isolation
+
+**Testcontainers integration test — `PGVectorPersonalMemoryStoreIT`:**
+- `pgvector/pgvector:pg16` container
+- Flyway migrations run in-test
+- Tests: save+findByType round-trip, reinforce-on-read (strength progression), findSimilar returns reinforced, countByUser, cross-user isolation, upsert semantics
+- Runs in CI (Docker unavailable in local scaffold env)
+
+**JaCoCo 80% line coverage gate:**
+- Added to parent `pom.xml` pluginManagement
+- `prepare-agent` → `report` → `check` at `verify` phase
+- `argLine` property defaulted to empty to prevent `@{argLine}` resolution failure
+
+**`application.yml` additions:**
+- `aether.core.embedding.enabled: ${EMBEDDING_ENABLED:true}`
+- `aether.core.context.memory-limit: ${CONTEXT_MEMORY_LIMIT:5}`
+
+### Files changed: 9 | Tests added: 18 + 9 IT scenarios

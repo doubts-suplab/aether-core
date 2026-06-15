@@ -27,19 +27,19 @@
 
 ---
 
-## Phase 1 — Personal Memory Engine 🔄
+## Phase 1 — Personal Memory Engine ✅
 
 **Goal:** Memory store fully operational with reinforcement-on-read, integration tests, and a working `PersonalContextProvider` implementation.
 
 | Deliverable | Status |
 |---|---|
-| Reinforce-on-read in `PGVectorPersonalMemoryStore` | ⏳ |
-| `PersonalContextProvider` implementation in core-memory | ⏳ |
-| Testcontainers integration test: save + findSimilar round-trip | ⏳ |
-| `PersonalContextController` uses `PersonalContextProvider` port | ⏳ |
-| `@ConditionalOnProperty` for embedding (skip when Ollama unavailable) | ⏳ |
-| Unit tests for PersonalMemory domain logic | ⏳ |
-| JaCoCo 80% line coverage gate | ⏳ |
+| Reinforce-on-read in `PGVectorPersonalMemoryStore` | ✅ |
+| `PersonalContextProvider` implementation in core-memory | ✅ |
+| Testcontainers integration test: save + findSimilar round-trip | ✅ |
+| `PersonalContextController` uses `PersonalContextProvider` port | ✅ |
+| `@ConditionalOnProperty` for embedding (skip when Ollama unavailable) | ✅ |
+| Unit tests for PersonalMemory domain logic | ✅ |
+| JaCoCo 80% line coverage gate | ✅ |
 
 ---
 

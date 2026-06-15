@@ -1,8 +1,7 @@
 package com.suplab.aether.core.api.controller;
 
-import com.suplab.aether.core.domain.MemoryType;
-import com.suplab.aether.core.memory.embedding.PersonalEmbeddingService;
-import com.suplab.aether.core.ports.PersonalMemoryStore;
+import com.suplab.aether.core.domain.PersonalContext;
+import com.suplab.aether.core.ports.PersonalContextProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -13,7 +12,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -25,9 +23,8 @@ import java.util.Map;
  * {@code AetherCoreBridgeAgent} can enrich {@code AgentInput.context} with personal
  * memories, emotional state, and engagement score.</p>
  *
- * <p>The response is intentionally a flat {@code Map<String, Object>} rather than a typed
- * DTO, matching the format Aether Grid's HTTP adapter deserialises via Jackson. This
- * avoids a shared DTO module between the two repositories.</p>
+ * <p>When the user has no stored memories the endpoint returns a neutral default context
+ * (HTTP 200) rather than 404 — Grid callers always receive a usable response.</p>
  */
 @RestController
 @RequestMapping("/api/v1/personal-context")
@@ -35,24 +32,18 @@ public class PersonalContextController {
 
     private static final Logger log = LoggerFactory.getLogger(PersonalContextController.class);
 
-    private final PersonalMemoryStore memoryStore;
-    private final PersonalEmbeddingService embeddingService;
+    private final PersonalContextProvider contextProvider;
 
-    public PersonalContextController(PersonalMemoryStore memoryStore,
-                                     PersonalEmbeddingService embeddingService) {
-        this.memoryStore = memoryStore;
-        this.embeddingService = embeddingService;
+    public PersonalContextController(PersonalContextProvider contextProvider) {
+        this.contextProvider = contextProvider;
     }
 
     /**
      * Returns the personal context snapshot for a user within a tenant.
      *
-     * <p>Assembles recent episodic and semantic memories, derives emotional state from
-     * emotional memories, and computes an engagement score from episodic memory strengths.</p>
-     *
      * @param tenantId    the tenant scope (required for multi-tenant isolation)
      * @param userId      the user whose context to assemble
-     * @param memoryLimit maximum number of memories per type (default 5)
+     * @param memoryLimit maximum number of memories per type (hint passed to provider, default 5)
      * @return personal context as a JSON map, always HTTP 200
      */
     @GetMapping("/{tenantId}/{userId}")
@@ -63,32 +54,25 @@ public class PersonalContextController {
 
         log.debug("Fetching personal context tenantId={} userId={} limit={}", tenantId, userId, memoryLimit);
 
-        var episodic = memoryStore.findByType(userId, MemoryType.EPISODIC, memoryLimit);
-        var emotional = memoryStore.findByType(userId, MemoryType.EMOTIONAL, 2);
-        var semantic = memoryStore.findByType(userId, MemoryType.SEMANTIC, memoryLimit);
-
-        List<String> summaries = new ArrayList<>();
-        episodic.forEach(m -> summaries.add(m.content()));
-        semantic.forEach(m -> summaries.add(m.content()));
-
-        var emotionalState = emotional.isEmpty() ? "NEUTRAL"
-                : emotional.getFirst().content().toUpperCase();
-
-        var engagementScore = episodic.isEmpty() ? 0.5
-                : Math.min(1.0, episodic.stream().mapToDouble(m -> m.strength()).average().orElse(0.5));
+        var context = contextProvider.buildContext(tenantId, userId)
+                .orElseGet(() -> emptyContext(tenantId, userId));
 
         var body = Map.<String, Object>of(
-                "userId", userId,
-                "tenantId", tenantId,
-                "recentMemorySummaries", summaries,
-                "preferences", Map.of(),
-                "emotionalState", emotionalState,
-                "engagementScore", engagementScore,
-                "fetchedAt", Instant.now().toString()
+                "userId", context.userId(),
+                "tenantId", context.tenantId(),
+                "recentMemorySummaries", context.recentMemorySummaries(),
+                "preferences", context.preferences(),
+                "emotionalState", context.emotionalState(),
+                "engagementScore", context.engagementScore(),
+                "fetchedAt", context.fetchedAt().toString()
         );
 
-        log.debug("Personal context assembled userId={} memorySummaries={} emotionalState={}",
-                userId, summaries.size(), emotionalState);
+        log.debug("Personal context assembled userId={} summaries={} emotionalState={}",
+                userId, context.recentMemorySummaries().size(), context.emotionalState());
         return ResponseEntity.ok(body);
+    }
+
+    private static PersonalContext emptyContext(String tenantId, String userId) {
+        return new PersonalContext(userId, tenantId, List.of(), Map.of(), "NEUTRAL", 0.5, Instant.now());
     }
 }
