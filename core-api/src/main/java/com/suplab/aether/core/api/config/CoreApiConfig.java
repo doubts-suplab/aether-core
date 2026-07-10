@@ -1,34 +1,29 @@
 package com.suplab.aether.core.api.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suplab.aether.core.memory.context.DefaultPersonalContextProvider;
 import com.suplab.aether.core.memory.embedding.PersonalEmbeddingService;
-import com.suplab.aether.core.memory.gdpr.JdbcGdprConsentStore;
+import com.suplab.aether.core.memory.preference.JdbcUserPreferenceStore;
 import com.suplab.aether.core.memory.session.JdbcCognitiveSessionStore;
 import com.suplab.aether.core.memory.store.PGVectorPersonalMemoryStore;
 import com.suplab.aether.core.ports.CognitiveSessionStore;
-import com.suplab.aether.core.ports.GdprConsentStore;
 import com.suplab.aether.core.ports.PersonalContextProvider;
 import com.suplab.aether.core.ports.PersonalMemoryStore;
+import com.suplab.aether.core.ports.UserPreferenceStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Spring configuration for Aether Core API beans.
  *
- * <p>Wires the pgvector memory store, Ollama embedding service, personal context
- * provider, cognitive session store, and GDPR consent store using constructor injection.
- * All beans are declared here — never via field {@code @Autowired}.</p>
- *
- * <p>{@code @EnableScheduling} activates the {@link
- * com.suplab.aether.core.memory.decay.MemoryDecayService} scheduled tasks (daily decay
- * and weekly purge).</p>
+ * <p>Wires the pgvector memory store, Ollama embedding service, and the personal context
+ * provider using constructor injection. All beans are declared here — never via field
+ * {@code @Autowired}.</p>
  */
 @Configuration
-@EnableScheduling
 public class CoreApiConfig {
 
     /**
@@ -40,32 +35,39 @@ public class CoreApiConfig {
     }
 
     /**
-     * Creates the cognitive session store backed by PostgreSQL.
+     * Creates the cognitive session store backed by the {@code cognitive_sessions} table.
      */
     @Bean
-    public CognitiveSessionStore cognitiveSessionStore(NamedParameterJdbcTemplate jdbc) {
-        return new JdbcCognitiveSessionStore(jdbc);
+    public CognitiveSessionStore cognitiveSessionStore(NamedParameterJdbcTemplate jdbc,
+                                                       ObjectMapper objectMapper) {
+        return new JdbcCognitiveSessionStore(jdbc, objectMapper);
     }
 
     /**
-     * Creates the GDPR consent store backed by PostgreSQL.
+     * Creates the user preference store backed by the {@code user_preferences} table.
      */
     @Bean
-    public GdprConsentStore gdprConsentStore(NamedParameterJdbcTemplate jdbc) {
-        return new JdbcGdprConsentStore(jdbc);
+    public UserPreferenceStore userPreferenceStore(NamedParameterJdbcTemplate jdbc,
+                                                   ObjectMapper objectMapper) {
+        return new JdbcUserPreferenceStore(jdbc, objectMapper);
     }
 
     /**
-     * Creates the context provider that assembles personal context snapshots for Grid.
+     * Creates the context provider that assembles personal context snapshots for Grid
+     * from memories, the active cognitive session, and stored preferences.
      *
      * @param memoryStore        the store to retrieve memories from
+     * @param sessionStore       the store to retrieve the active session from
+     * @param preferenceStore    the store to retrieve preferences from
      * @param defaultMemoryLimit max memories per type fetched per context request
      */
     @Bean
     public PersonalContextProvider personalContextProvider(
             PersonalMemoryStore memoryStore,
+            CognitiveSessionStore sessionStore,
+            UserPreferenceStore preferenceStore,
             @Value("${aether.core.context.memory-limit:5}") int defaultMemoryLimit) {
-        return new DefaultPersonalContextProvider(memoryStore, defaultMemoryLimit);
+        return new DefaultPersonalContextProvider(memoryStore, sessionStore, preferenceStore, defaultMemoryLimit);
     }
 
     /**

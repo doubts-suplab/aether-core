@@ -4,31 +4,31 @@ import com.suplab.aether.core.domain.CognitiveSession;
 import com.suplab.aether.core.ports.CognitiveSessionStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * REST API for cognitive session management.
+ * Lifecycle operations for multi-turn cognitive sessions.
  *
- * <p>Sessions capture the emotional arc and engagement level across a multi-turn user
- * interaction. A session is created on the first turn, updated with each subsequent
- * turn summary, and closed explicitly or via the weekly expiry scheduler.</p>
- *
- * <h2>Typical Flow</h2>
- * <ol>
- *   <li>{@code POST /api/v1/sessions} — create or resume a session</li>
- *   <li>{@code PUT  /api/v1/sessions/{sessionId}/turns} — add turn summaries</li>
- *   <li>{@code POST /api/v1/sessions/{sessionId}/close} — close the session</li>
- * </ol>
+ * <p>Creating a session closes any previous ACTIVE session for the same user/tenant —
+ * a user holds exactly one active session per tenant. Turns are appended via PATCH and
+ * update the session's emotional state and engagement score, which then flow into the
+ * {@code PersonalContext} served to Aether Grid.</p>
  */
 @RestController
-@RequestMapping("/api/v1/sessions")
+@RequestMapping("/api/v1/tenants/{tenantId}/users/{userId}/sessions")
 public class CognitiveSessionController {
 
     private static final Logger log = LoggerFactory.getLogger(CognitiveSessionController.class);
@@ -40,101 +40,105 @@ public class CognitiveSessionController {
     }
 
     /**
-     * Creates a new cognitive session. If an active session already exists for the
-     * user/tenant, the existing session is returned rather than creating a duplicate.
+     * Starts a new ACTIVE session for the user, closing any prior active session.
+     *
+     * @return 201 Created with the new session
      */
     @PostMapping
-    public ResponseEntity<Map<String, Object>> createOrResume(@RequestBody Map<String, String> body) {
-        String userId = body.get("userId");
-        String tenantId = body.get("tenantId");
-        if (userId == null || userId.isBlank() || tenantId == null || tenantId.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "userId and tenantId are required"));
-        }
-
-        var existing = sessionStore.findActiveSession(userId, tenantId);
-        if (existing.isPresent()) {
-            log.debug("Resuming active session sessionId={} userId={}", existing.get().sessionId(), userId);
-            return ResponseEntity.ok(toMap(existing.get(), "resumed"));
-        }
-
-        var session = new CognitiveSession(UUID.randomUUID(), userId, tenantId,
-                List.of(), "NEUTRAL", 0.5, Instant.now(), Instant.now());
+    public ResponseEntity<Map<String, Object>> create(
+            @PathVariable String tenantId,
+            @PathVariable String userId) {
+        var session = CognitiveSession.start(tenantId, userId);
         sessionStore.save(session);
-        log.info("Created session sessionId={} userId={} tenantId={}", session.sessionId(), userId, tenantId);
-        return ResponseEntity.status(201).body(toMap(session, "created"));
+        log.info("Started cognitive session id={} userId={} tenantId={}",
+                session.sessionId(), userId, tenantId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(toBody(session));
     }
 
     /**
-     * Adds turn summaries to an existing session and updates emotional state and engagement score.
-     */
-    @PutMapping("/{sessionId}/turns")
-    public ResponseEntity<Map<String, Object>> addTurns(
-            @PathVariable UUID sessionId,
-            @RequestBody Map<String, Object> body) {
-
-        var sessionOpt = sessionStore.findById(sessionId);
-        if (sessionOpt.isEmpty()) {
-            return ResponseEntity.notFound().build();
-        }
-
-        @SuppressWarnings("unchecked")
-        List<String> newSummaries = (List<String>) body.getOrDefault("turnSummaries", List.of());
-        String emotionalState = (String) body.getOrDefault("emotionalState", sessionOpt.get().emotionalState());
-        double engagementScore = body.containsKey("engagementScore")
-                ? ((Number) body.get("engagementScore")).doubleValue()
-                : sessionOpt.get().engagementScore();
-
-        var existing = sessionOpt.get();
-        var combined = new ArrayList<>(existing.turnSummaries());
-        combined.addAll(newSummaries);
-
-        var updated = new CognitiveSession(
-                existing.sessionId(), existing.userId(), existing.tenantId(),
-                combined, emotionalState, engagementScore,
-                existing.startedAt(), Instant.now());
-        sessionStore.save(updated);
-
-        log.debug("Updated session sessionId={} turns={} emotionalState={}",
-                sessionId, combined.size(), emotionalState);
-        return ResponseEntity.ok(toMap(updated, "updated"));
-    }
-
-    /**
-     * Closes an active session.
-     */
-    @PostMapping("/{sessionId}/close")
-    public ResponseEntity<Map<String, Object>> close(@PathVariable UUID sessionId) {
-        if (sessionStore.findById(sessionId).isEmpty()) {
-            return ResponseEntity.notFound().build();
-        }
-        sessionStore.close(sessionId);
-        log.info("Closed session sessionId={}", sessionId);
-        return ResponseEntity.ok(Map.of("sessionId", sessionId.toString(), "status", "closed"));
-    }
-
-    /**
-     * Returns recent sessions for a user.
+     * Lists the user's sessions, most recently active first.
      */
     @GetMapping
-    public ResponseEntity<List<Map<String, Object>>> getRecentSessions(
-            @RequestParam String userId,
+    public ResponseEntity<List<Map<String, Object>>> list(
+            @PathVariable String tenantId,
+            @PathVariable String userId,
             @RequestParam(defaultValue = "10") int limit) {
-        var sessions = sessionStore.findRecentByUser(userId, limit);
-        var body = sessions.stream().map(s -> toMap(s, "found")).toList();
-        return ResponseEntity.ok(body);
+        var sessions = sessionStore.findByUser(tenantId, userId, limit);
+        return ResponseEntity.ok(sessions.stream().map(CognitiveSessionController::toBody).toList());
     }
 
     /**
-     * Returns a single session by ID.
+     * Returns a single session by ID, scoped to the owning user.
      */
     @GetMapping("/{sessionId}")
-    public ResponseEntity<Map<String, Object>> getById(@PathVariable UUID sessionId) {
-        return sessionStore.findById(sessionId)
-                .map(s -> ResponseEntity.ok(toMap(s, "found")))
+    public ResponseEntity<Map<String, Object>> get(
+            @PathVariable String tenantId,
+            @PathVariable String userId,
+            @PathVariable UUID sessionId) {
+        return sessionStore.findById(sessionId, userId)
+                .map(session -> ResponseEntity.ok(toBody(session)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    private static Map<String, Object> toMap(CognitiveSession session, String status) {
+    /**
+     * Appends a turn to the session.
+     *
+     * <p>Request body: {@code {"turnSummary": "...", "emotionalState": "FOCUSED",
+     * "engagementScore": 0.8}} — only {@code turnSummary} is required.</p>
+     *
+     * @return 200 OK with the updated session, 404 if not found, 409 if the session is closed
+     */
+    @PatchMapping("/{sessionId}/turns")
+    public ResponseEntity<Map<String, Object>> addTurn(
+            @PathVariable String tenantId,
+            @PathVariable String userId,
+            @PathVariable UUID sessionId,
+            @RequestBody Map<String, Object> body) {
+
+        var turnSummary = body.get("turnSummary") instanceof String s ? s : null;
+        if (turnSummary == null || turnSummary.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "turnSummary is required"));
+        }
+        var emotionalState = body.get("emotionalState") instanceof String s ? s : null;
+        var engagementScore = body.get("engagementScore") instanceof Number n ? n.doubleValue() : -1.0;
+
+        var existing = sessionStore.findById(sessionId, userId);
+        if (existing.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        if (!existing.get().isActive()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", "session is closed"));
+        }
+
+        var updated = existing.get().withTurn(turnSummary, emotionalState, engagementScore);
+        sessionStore.save(updated);
+        log.debug("Added turn to session id={} userId={} turns={}",
+                sessionId, userId, updated.turnSummaries().size());
+        return ResponseEntity.ok(toBody(updated));
+    }
+
+    /**
+     * Closes the session. Closing an already-closed session is a no-op.
+     *
+     * @return 200 OK with the closed session, 404 if not found
+     */
+    @PostMapping("/{sessionId}/close")
+    public ResponseEntity<Map<String, Object>> close(
+            @PathVariable String tenantId,
+            @PathVariable String userId,
+            @PathVariable UUID sessionId) {
+        var existing = sessionStore.findById(sessionId, userId);
+        if (existing.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        var closed = existing.get().close();
+        sessionStore.save(closed);
+        log.info("Closed cognitive session id={} userId={}", sessionId, userId);
+        return ResponseEntity.ok(toBody(closed));
+    }
+
+    private static Map<String, Object> toBody(CognitiveSession session) {
         return Map.of(
                 "sessionId", session.sessionId().toString(),
                 "userId", session.userId(),
@@ -142,9 +146,9 @@ public class CognitiveSessionController {
                 "turnSummaries", session.turnSummaries(),
                 "emotionalState", session.emotionalState(),
                 "engagementScore", session.engagementScore(),
+                "status", session.status().name(),
                 "startedAt", session.startedAt().toString(),
-                "lastActiveAt", session.lastActiveAt().toString(),
-                "status", status
+                "lastActiveAt", session.lastActiveAt().toString()
         );
     }
 }

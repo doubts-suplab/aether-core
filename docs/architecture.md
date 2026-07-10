@@ -16,16 +16,23 @@ Aether Grid (suplab/aether-grid)
 Aether Core (suplab/aether-core)          port 8082
       │
       ├── PersonalContextController
-      │       │
+      │       └── PersonalContextProvider (port)
+      │               └── DefaultPersonalContextProvider (adapter)
+      │                       ├── PersonalMemoryStore     → PGVectorPersonalMemoryStore
+      │                       │                              └── PostgreSQL 16 + pgvector
+      │                       ├── CognitiveSessionStore   → JdbcCognitiveSessionStore
+      │                       └── UserPreferenceStore     → JdbcUserPreferenceStore
+      │
+      ├── PersonalMemoryController
       │       ├── PersonalMemoryStore (port)
-      │       │       └── PGVectorPersonalMemoryStore (adapter)
-      │       │                └── PostgreSQL 16 + pgvector
-      │       │
       │       └── PersonalEmbeddingService
       │               └── Ollama (all-MiniLM-L6-v2, 384-dim)
       │
-      └── PersonalMemoryController
-              └── POST/DELETE memories
+      ├── CognitiveSessionController
+      │       └── CognitiveSessionStore (port) — create / list / add turn / close
+      │
+      └── UserPreferenceController
+              └── UserPreferenceStore (port) — get / replace
 ```
 
 ---
@@ -39,13 +46,22 @@ Contains all domain types and port interfaces. Zero Spring dependencies — full
 ```
 com.suplab.aether.core.domain
   PersonalMemory        — record: id, userId, type, content, strength, accessCount, timestamps
+                          create() factory · reinforce() → strength+0.1 capped at 1.0
   MemoryType            — enum: EPISODIC | SEMANTIC | PROCEDURAL | EMOTIONAL
-  CognitiveSession      — record: sessionId, userId, tenantId, turnSummaries, emotionalState, ...
+  CognitiveSession      — record: sessionId, userId, tenantId, turnSummaries, emotionalState,
+                          engagementScore, status, timestamps
+                          start() factory · withTurn() appends + updates state · close()
+  SessionStatus         — enum: ACTIVE | CLOSED (one ACTIVE per user per tenant)
   PersonalContext       — record: assembled snapshot served to Grid
+  AgentDecisionFeedback — record: Grid decision feedback from Kafka
+  DecisionOutcome       — enum: CORRECT | INCORRECT | OVERRIDDEN
 
 com.suplab.aether.core.ports
-  PersonalMemoryStore   — driven port: save, findSimilar, findByType, delete, countByUser
+  PersonalMemoryStore     — driven port: save, findSimilar, findByType, delete, countByUser
   PersonalContextProvider — driven port: buildContext(tenantId, userId)
+  CognitiveSessionStore   — driven port: save, findById, findActive, findByUser
+  UserPreferenceStore     — driven port: find, save (replace semantics)
+  MemoryLifecyclePort     — driven port: runLifecycle() → LifecycleResult
 ```
 
 ### `core-memory` — Persistence Adapters
@@ -58,11 +74,40 @@ com.suplab.aether.core.memory.store
     • save(): upsert with vector embedding
     • findSimilar(): cosine similarity (<=>), ORDER BY distance, LIMIT
     • findByType(): filtered by memory_type, ORDER BY strength DESC
+    • Reinforce-on-read: every retrieval strengthens the memory (+0.1 capped at 1.0,
+      accessCount+1) and persists the reinforced state immediately
+
+com.suplab.aether.core.memory.context
+  DefaultPersonalContextProvider  — implements PersonalContextProvider
+    • Assembles PersonalContext from memories + active session + preferences
+    • Active session's emotionalState/engagementScore override memory-derived values
+    • Session turn summaries prepended to memory summaries
+    • Optional.empty() when the user has no cognitive data at all
+
+com.suplab.aether.core.memory.session
+  JdbcCognitiveSessionStore  — implements CognitiveSessionStore
+    • Turn summaries stored as a JSONB array
+    • Saving an ACTIVE session closes the user's previous active session in the tenant
+
+com.suplab.aether.core.memory.preference
+  JdbcUserPreferenceStore  — implements UserPreferenceStore
+    • One JSONB document per user, replace-on-save semantics
+
+com.suplab.aether.core.memory.feedback
+  AgentDecisionFeedbackProcessor  — turns Grid decision feedback into memories
+    • CORRECT → PROCEDURAL (strength 1.0) · INCORRECT/OVERRIDDEN → PROCEDURAL (0.6)
+    • engagementSignal → EMOTIONAL (ENGAGED / NEUTRAL / DISENGAGED)
+
+com.suplab.aether.core.memory.lifecycle
+  JdbcMemoryLifecycleService  — implements MemoryLifecyclePort
+    • Set-based decay: strength -= decay_rate × days_since_access (grace period 7d)
+    • Atomic archive via data-modifying CTE (DELETE … RETURNING → INSERT)
 
 com.suplab.aether.core.memory.embedding
   PersonalEmbeddingService  — Ollama RestClient adapter
     • embed(text) → float[384]
     • Graceful fallback: returns zero vector on Ollama unavailability
+    • Conditional bean: aether.core.embedding.enabled=false runs Core without Ollama
 ```
 
 ### `core-api` — Spring Boot Application
@@ -74,11 +119,24 @@ com.suplab.aether.core.api
   AetherCoreApplication  — @SpringBootApplication, port 8082
 
 com.suplab.aether.core.api.controller
-  PersonalContextController  — GET /api/v1/personal-context/{tenantId}/{userId}
-  PersonalMemoryController   — POST/GET/DELETE /api/v1/users/{userId}/memories
+  PersonalContextController   — GET /api/v1/personal-context/{tenantId}/{userId}
+  PersonalMemoryController    — POST/GET/DELETE /api/v1/users/{userId}/memories
+  CognitiveSessionController  — /api/v1/tenants/{tenantId}/users/{userId}/sessions
+                                POST create · GET list · GET {sessionId}
+                                PATCH {sessionId}/turns · POST {sessionId}/close
+  UserPreferenceController    — GET/PUT /api/v1/users/{userId}/preferences
+
+com.suplab.aether.core.api.feedback
+  GridFeedbackListener  — @KafkaListener on aether.core.feedback (opt-in)
+  GridFeedbackConfig    — @ConditionalOnProperty(aether.core.feedback.enabled)
+
+com.suplab.aether.core.api.lifecycle
+  MemoryDecayScheduler   — @Scheduled decay job (default 03:00 daily) + Micrometer metrics
+  MemoryLifecycleConfig  — @EnableScheduling, decay-enabled default true
 
 com.suplab.aether.core.api.config
-  CoreApiConfig  — @Bean wiring: PersonalMemoryStore, PersonalEmbeddingService
+  CoreApiConfig  — @Bean wiring: PersonalMemoryStore, CognitiveSessionStore,
+                   UserPreferenceStore, PersonalContextProvider, PersonalEmbeddingService
 ```
 
 ### `core-infra` — Infrastructure
@@ -108,6 +166,38 @@ Docker Compose for local dev, standalone Flyway migrations.
 - `idx_personal_memories_user_type` — `(user_id, memory_type)` for type-filtered queries
 - `idx_personal_memories_embedding` — `ivfflat (embedding vector_cosine_ops)`, lists=100
 
+### `cognitive_sessions` table (V003)
+
+| Column | Type | Notes |
+|---|---|---|
+| `session_id` | `UUID` | PK, `gen_random_uuid()` |
+| `user_id` | `TEXT` | Scoped per user |
+| `tenant_id` | `TEXT` | Tenant isolation |
+| `turn_summaries` | `JSONB` | Array of one-line turn summaries |
+| `emotional_state` | `TEXT` | Latest observed state, default NEUTRAL |
+| `engagement_score` | `DOUBLE PRECISION` | 0.0–1.0 |
+| `status` | `TEXT` | CHECK IN ('ACTIVE','CLOSED') |
+| `started_at` | `TIMESTAMPTZ` | Immutable |
+| `last_active_at` | `TIMESTAMPTZ` | Updated on every turn |
+
+**Indexes:**
+- `idx_cognitive_sessions_user` — `(tenant_id, user_id, last_active_at DESC)`
+- `idx_cognitive_sessions_one_active` — partial UNIQUE `(tenant_id, user_id) WHERE status = 'ACTIVE'` — enforces one active session per user per tenant
+
+### `user_preferences` table (V004)
+
+| Column | Type | Notes |
+|---|---|---|
+| `user_id` | `TEXT` | PK |
+| `preferences` | `JSONB` | Free-form key/value document, replace-on-save |
+| `updated_at` | `TIMESTAMPTZ` | Updated on save |
+
+### `personal_memories_archive` table (V005)
+
+Same columns as `personal_memories` (embedding retained for potential restore) plus `archived_at TIMESTAMPTZ`. Faded memories (`strength < 0.1` after decay) are **moved** here by the nightly lifecycle job — never silently deleted. Indexed on `(user_id, archived_at DESC)`.
+
+**Memory lifecycle:** retrieval reinforces (`+0.1` strength per read); the scheduler decays memories not accessed for 7+ days at `0.01 × days_since_access` per run and archives what falls below the threshold. All rates configurable under `aether.core.memory.*`.
+
 ---
 
 ## PersonalContext API Contract
@@ -125,12 +215,55 @@ Response 200:
     "Presented Q3 roadmap to stakeholders",
     "Prefers async communication over meetings"
   ],
-  "preferences": {},
+  "preferences": { "communication-style": "async" },
   "emotionalState": "MOTIVATED",
   "engagementScore": 0.82,
   "fetchedAt": "2026-06-15T08:00:00Z"
 }
 ```
+
+**Assembly rules (Phase 2):**
+- If the user has an ACTIVE cognitive session, its `emotionalState` and `engagementScore` override memory-derived values, and its turn summaries appear first in `recentMemorySummaries`.
+- `preferences` is populated from the `user_preferences` table.
+- A user with no memories, no active session, and no preferences receives a neutral default context (NEUTRAL, 0.5) — the endpoint always returns HTTP 200.
+
+---
+
+## Grid Feedback Loop (Kafka)
+
+Grid publishes decision outcomes to the `aether.core.feedback` topic; Core turns them into personal memories.
+
+```
+Aether Grid ──publish──▶ Kafka topic: aether.core.feedback
+                              │
+                              ▼
+              GridFeedbackListener (core-api, @KafkaListener)
+                              │  flat JSON → AgentDecisionFeedback
+                              ▼
+              AgentDecisionFeedbackProcessor (core-memory)
+                    ├── CORRECT outcome      → PROCEDURAL memory (strength 1.0)
+                    ├── INCORRECT/OVERRIDDEN → PROCEDURAL memory (strength 0.6)
+                    └── engagementSignal     → EMOTIONAL memory
+                                               (ENGAGED ≥0.66 / NEUTRAL ≥0.33 / DISENGAGED)
+```
+
+**Message contract** (flat JSON — no shared DTO module, mirrors the REST approach):
+
+```json
+{
+  "tenantId": "acme-corp",
+  "userId": "user-42",
+  "agentType": "GovernanceAgent",
+  "decisionSummary": "Approved elevated API quota for analytics batch job",
+  "outcome": "CORRECT",
+  "confidence": 0.91,
+  "engagementSignal": 0.8,
+  "occurredAt": "2026-07-10T08:00:00Z"
+}
+```
+
+`engagementSignal` and `occurredAt` are optional. Malformed messages are logged and skipped.
+The consumer is **disabled by default** (`aether.core.feedback.enabled=false`) — Core must run standalone without Kafka or Grid present.
 
 ---
 

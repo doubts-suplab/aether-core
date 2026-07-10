@@ -5,16 +5,17 @@
 
 ---
 
-**Active Phase:** Phase 2 — Cognitive Session Management
+**Active Phase:** Phase 3 — GDPR + Right to Erasure (returning after 4/5 prioritisation)
+> Phases 4 and 5 were prioritised ahead of Phase 3 (GDPR) by explicit decision.
 
 | Phase | Name | Status | Sessions |
 |---|---|---|---|
 | 0 | Scaffold | ✅ Complete | 1 |
 | 1 | Personal Memory Engine | ✅ Complete | 2 |
-| 2 | Cognitive Session Management | 🔄 In Progress | — |
-| 3 | GDPR + Right to Erasure | ⏳ Planned | — |
-| 4 | Grid Feedback Loop (Kafka) | ⏳ Planned | — |
-| 5 | Memory Decay + Reinforcement Scheduler | ⏳ Planned | — |
+| 2 | Cognitive Session Management | ✅ Complete | 2 |
+| 3 | GDPR + Right to Erasure | ⏳ Planned (deferred) | — |
+| 4 | Grid Feedback Loop (Kafka) | ✅ Complete | 3 |
+| 5 | Memory Decay + Reinforcement Scheduler | ✅ Complete | 3 |
 | 6 | Kubernetes + Helm | ⏳ Planned | — |
 
 ---
@@ -120,3 +121,107 @@
 - `aether.core.context.memory-limit: ${CONTEXT_MEMORY_LIMIT:5}`
 
 ### Files changed: 9 | Tests added: 18 + 9 IT scenarios
+
+---
+
+## Phase 2 — Cognitive Session Management ✅
+
+**Commit:** `feat(core): Phase 2 — cognitive sessions, user preferences, session-enriched context`
+
+### What was done
+
+**Domain (`core-domain`):**
+- `SessionStatus` enum: ACTIVE | CLOSED
+- `CognitiveSession` extended with `status` field and behaviour:
+  - `start(tenantId, userId)` factory — new ACTIVE session, no turns
+  - `withTurn(summary, emotionalState, engagementScore)` — appends turn, updates state; throws `IllegalStateException` on closed sessions
+  - `close()` — idempotent transition to CLOSED
+- `CognitiveSessionStore` port: save, findById, findActive, findByUser
+- `UserPreferenceStore` port: find, save (replace semantics)
+
+**Migrations:**
+- `V003__create_cognitive_sessions.sql` — JSONB turn_summaries, partial UNIQUE index enforcing one ACTIVE session per (tenant, user)
+- `V004__create_user_preferences.sql` — one JSONB document per user
+
+**Adapters (`core-memory`):**
+- `JdbcCognitiveSessionStore` — JSONB serialisation via Jackson; saving an ACTIVE session closes the user's previous active session in the tenant
+- `JdbcUserPreferenceStore` — JSONB upsert, replace-on-save
+- `DefaultPersonalContextProvider` enriched: active session's emotionalState/engagementScore override memory-derived values; session turns prepended to summaries; preferences populated from store
+
+**API (`core-api`):**
+- `CognitiveSessionController` — POST create (closes prior active), GET list, GET by id, PATCH add turn (409 on closed session), POST close
+- `UserPreferenceController` — GET / PUT `/api/v1/users/{userId}/preferences`
+- `CoreApiConfig` — CognitiveSessionStore, UserPreferenceStore beans; context provider rewired with all three stores
+
+**Tests — 31 unit tests green:**
+- `CognitiveSessionTest` (9): start/withTurn/close semantics, closed-session guard, validation
+- `PersonalMemoryTest` (12): unchanged from Phase 1
+- `DefaultPersonalContextProviderTest` (10): session override, turn ordering, preferences, empty-context rules
+- ITs (CI, Testcontainers): `JdbcCognitiveSessionStoreIT` (7 scenarios — one-active enforcement, tenant coexistence, upsert, user scoping), `JdbcUserPreferenceStoreIT` (4 scenarios)
+
+### Files changed: 18
+
+---
+
+## Phase 4 — Grid Feedback Loop (Kafka) ✅
+
+**Commit:** `feat(core): Phase 4 — Kafka feedback loop, Grid decisions become personal memories`
+
+### What was done
+
+**Domain (`core-domain`):**
+- `DecisionOutcome` enum: CORRECT | INCORRECT | OVERRIDDEN
+- `AgentDecisionFeedback` record: tenantId, userId, agentType, decisionSummary, outcome, confidence, engagementSignal (negative = absent), occurredAt; `hasEngagementSignal()` helper
+
+**Processor (`core-memory`):**
+- `AgentDecisionFeedbackProcessor` — the learning half of the Grid ↔ Core loop:
+  - CORRECT → PROCEDURAL memory at full strength ("what worked for this user")
+  - INCORRECT/OVERRIDDEN → PROCEDURAL memory at 0.6 strength (fades unless pattern repeats)
+  - Engagement signal → EMOTIONAL memory: ENGAGED (≥0.66) / NEUTRAL (≥0.33) / DISENGAGED
+  - Embedding service optional — zero vectors when Ollama disabled
+
+**Kafka consumer (`core-api`):**
+- `GridFeedbackListener` — `@KafkaListener` on `aether.core.feedback` topic (configurable topic + group-id); flat-JSON contract, field-by-field parsing; malformed messages logged and skipped (never wedges the consumer group)
+- `GridFeedbackConfig` — `@ConditionalOnProperty(aether.core.feedback.enabled)`, **disabled by default** (Core runs standalone without Kafka)
+- `spring-kafka` dependency; `spring.kafka.*` consumer config in application.yml
+
+**Infrastructure:**
+- Docker Compose: `kafka-core` service (apache/kafka 3.8, KRaft single node, healthcheck); aether-core wired with `FEEDBACK_ENABLED=true` + `KAFKA_BOOTSTRAP_SERVERS`
+
+**Tests — 11 new, all green (42 total):**
+- `AgentDecisionFeedbackProcessorTest` (6): outcome→memory mapping, strength rules, engagement banding
+- `GridFeedbackListenerTest` (5): contract parsing, defaults, malformed/missing-field/unknown-outcome skip behaviour
+
+### Files changed: 10
+
+---
+
+## Phase 5 — Memory Decay + Reinforcement Scheduler ✅
+
+**Commit:** `feat(core): Phase 5 — memory decay scheduler with archive and lifecycle metrics`
+
+### What was done
+
+**Port (`core-domain`):**
+- `MemoryLifecyclePort` — `runLifecycle()` returning `LifecycleResult(decayedCount, archivedCount, totalRemaining)`
+
+**Migration:**
+- `V005__create_personal_memories_archive.sql` — archive keeps all columns including the 384-dim embedding (restore-friendly), plus `archived_at`; indexed on `(user_id, archived_at DESC)`
+
+**Service (`core-memory`):**
+- `JdbcMemoryLifecycleService` — fully set-based, two SQL statements per run:
+  - Decay: `strength = GREATEST(0, strength - decay_rate × days_since_access)` for memories outside the grace period (`make_interval(days => :decayAfterDays)`)
+  - Archive: data-modifying CTE (`WITH moved AS (DELETE … RETURNING …) INSERT …`) — atomic move, a memory can never be deleted without landing in the archive
+
+**Scheduler (`core-api`):**
+- `MemoryDecayScheduler` — `@Scheduled` (default cron 03:00 daily), Micrometer metrics:
+  - `aether.core.memories.decayed` / `.archived` counters (accumulate across runs)
+  - `aether.core.memories.total` gauge (active memories after last run)
+- `MemoryLifecycleConfig` — `@EnableScheduling`, enabled by default, `aether.core.memory.decay-enabled=false` to opt out
+- Config keys: `decay-rate` (0.01/day), `decay-after-days` (7), `archive-threshold` (0.1), `decay-cron`
+
+**Tests — 2 new unit + 6 IT scenarios (44 unit total green):**
+- `MemoryDecaySchedulerTest` (2): delegation + metric recording, counter accumulation vs gauge latest-value
+- `JdbcMemoryLifecycleServiceIT` (6, Testcontainers/CI): decay math, grace period, archive move, decay-then-archive same run, strength floor at 0, totalRemaining accuracy
+
+### Files changed: 9
