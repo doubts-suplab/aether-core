@@ -5,7 +5,7 @@
 
 ---
 
-**Active Phase:** Phase 3 — GDPR + Right to Erasure 🔄 (core complete: erasure + audit; export & retention follow-up)
+**Active Phase:** Phase 3 — GDPR + Right to Erasure 🔄 (core complete: erasure + audit + multi-jurisdiction retention holds; export & retention purge follow-up)
 > Phases 4 and 5 were prioritised ahead of Phase 3 (GDPR) by explicit decision.
 
 | Phase | Name | Status | Sessions |
@@ -13,7 +13,7 @@
 | 0 | Scaffold | ✅ Complete | 1 |
 | 1 | Personal Memory Engine | ✅ Complete | 2 |
 | 2 | Cognitive Session Management | ✅ Complete | 2 |
-| 3 | GDPR + Right to Erasure | 🔄 Core complete (erasure + audit) | 4 |
+| 3 | GDPR + Right to Erasure | 🔄 Core complete (erasure + audit + retention holds) | 5 |
 | 4 | Grid Feedback Loop (Kafka) | ✅ Complete | 3 |
 | 5 | Memory Decay + Reinforcement Scheduler | ✅ Complete | 3 |
 | 6 | Kubernetes + Helm | ⏳ Planned | — |
@@ -269,6 +269,44 @@ GDPR Article 17 right-to-erasure over all of them, with an audit trail that surv
   preferences), plus a new `JdbcErasureEventStoreIT`.
 - `mvn -DskipITs verify` passes the JaCoCo 80% gate; ITs run under failsafe in CI.
 
+---
+
+## Phase 3 — GDPR + Right to Erasure 🔄 (session 5 — multi-jurisdiction retention holds)
+
+**Commit:** `feat(core): legal/statutory retention holds gate erasure (V007)`
+
+Session 4 built the erasure primitive for the EU (GDPR). Session 5 makes it **multi-jurisdiction**.
+The primitive — delete on request + immutable audit — already satisfies the "delete" right of GDPR,
+CCPA/CPRA, the ~20 US state privacy laws, LGPD, PIPL, DPDP and others alike; what differs across
+regimes is **statutory retention exceptions** (GDPR Art. 17(3), CCPA §1798.105(d), HIPAA/GLBA
+retention mandates, active litigation). This session adds the seam that honours them uniformly.
+
+### What was done
+
+**Legal / statutory retention holds:**
+- `DataCategory` enum (`MEMORIES` | `SESSIONS` | `PREFERENCES`), `LegalHold` record, and
+  `LegalHoldStore` port (place / lift / heldCategories / findByUser) in `core-domain`.
+- `JdbcLegalHoldStore` (core-memory) backed by the `legal_holds` table — one row per
+  `(user_id, category)`, `place` upserts.
+- `DefaultPersonalDataErasureService` now consults `heldCategories(userId)` and **skips every held
+  category**; unheld data is still erased. Both `eraseMemories` and `eraseAccount` are hold-aware.
+- `LegalHoldController` (core-api): `GET/PUT/DELETE /api/v1/users/{userId}/legal-holds[/{category}]`.
+
+**Truthful partial-erasure audit:**
+- `ErasureEvent` gains `heldCategories` (immutable set) + `hasHolds()`; the erasure view and audit
+  log now report which categories a hold retained, so a partial erasure is auditable, not silent.
+- **Migration V007** — `legal_holds` table + `held_categories` column on `erasure_events` (api +
+  core-memory test + core-infra copies).
+
+**Tests — 65 unit tests green (was 54):**
+- Domain `LegalHoldTest` (2) + `ErasureEventTest` held/immutability cases (2).
+- Engine `DefaultPersonalDataErasureServiceTest` hold-skip cases (3): held category skipped and
+  recorded, memories-only ignores out-of-scope holds.
+- Api `LegalHoldControllerTest` (4). New `JdbcLegalHoldStoreIT` + `held_categories` round-trip in
+  `JdbcErasureEventStoreIT` under failsafe.
+- `mvn -DskipITs verify` passes the JaCoCo 80% gate.
+
 ### Remaining Phase 3 (follow-up)
-- **Memory export** (`GET …/export`, Article 20 portability).
-- **`data_retention_days`** per user + a retention purge sweep (`user_privacy_settings`, migration V007).
+- **Memory export** (`GET …/export`, Article 20 portability / CCPA right-to-know).
+- **Requester identity verification** on erasure (CCPA verifiable consumer request).
+- **`data_retention_days`** per user + a retention purge sweep (`user_privacy_settings`, migration V008).

@@ -41,4 +41,24 @@ class ErasureEventTest {
         assertThatThrownBy(() -> ErasureEvent.of("u", null, 0, 0, 0, "x"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("scope");
     }
+
+    @Test
+    void noHoldsByDefaultAndHeldCategoriesAreRecorded() {
+        var plain = ErasureEvent.of("u-1", ErasureScope.ACCOUNT, 5, 2, 1, "self");
+        assertThat(plain.heldCategories()).isEmpty();
+        assertThat(plain.hasHolds()).isFalse();
+
+        var partial = ErasureEvent.of("u-1", ErasureScope.ACCOUNT, 5, 0, 1,
+                java.util.Set.of(DataCategory.SESSIONS), "self");
+        assertThat(partial.heldCategories()).containsExactly(DataCategory.SESSIONS);
+        assertThat(partial.hasHolds()).isTrue();
+    }
+
+    @Test
+    void heldCategoriesSetIsImmutable() {
+        var event = ErasureEvent.of("u-1", ErasureScope.MEMORIES, 0, 0, 0,
+                java.util.Set.of(DataCategory.MEMORIES), "self");
+        assertThatThrownBy(() -> event.heldCategories().add(DataCategory.SESSIONS))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
 }

@@ -1,5 +1,6 @@
 package com.suplab.aether.core.memory.erasure;
 
+import com.suplab.aether.core.domain.DataCategory;
 import com.suplab.aether.core.domain.ErasureEvent;
 import com.suplab.aether.core.domain.ErasureScope;
 import com.suplab.aether.core.ports.ErasureEventStore;
@@ -11,15 +12,20 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * JDBC implementation of {@link ErasureEventStore} backed by the append-only {@code erasure_events}
  * table.
  *
  * <p>Write-once: only {@code INSERT} and scoped {@code SELECT} — no update or delete path, so the
- * audit trail outlives the data it describes. Explicit column lists and named parameters throughout.</p>
+ * audit trail outlives the data it describes. Explicit column lists and named parameters throughout.
+ * {@code held_categories} is stored as a sorted, comma-separated list of {@link DataCategory} names
+ * (empty string when nothing was held).</p>
  */
 public class JdbcErasureEventStore implements ErasureEventStore {
 
@@ -36,10 +42,10 @@ public class JdbcErasureEventStore implements ErasureEventStore {
         var sql = """
                 INSERT INTO erasure_events
                     (id, user_id, scope, memories_erased, sessions_erased, preferences_erased,
-                     requested_by, erased_at)
+                     held_categories, requested_by, erased_at)
                 VALUES
                     (:id, :userId, :scope, :memoriesErased, :sessionsErased, :preferencesErased,
-                     :requestedBy, :erasedAt)
+                     :heldCategories, :requestedBy, :erasedAt)
                 """;
         var params = new MapSqlParameterSource()
                 .addValue("id", event.id())
@@ -48,18 +54,19 @@ public class JdbcErasureEventStore implements ErasureEventStore {
                 .addValue("memoriesErased", event.memoriesErased())
                 .addValue("sessionsErased", event.sessionsErased())
                 .addValue("preferencesErased", event.preferencesErased())
+                .addValue("heldCategories", serialize(event.heldCategories()))
                 .addValue("requestedBy", event.requestedBy())
                 .addValue("erasedAt", Timestamp.from(event.erasedAt()));
         jdbc.update(sql, params);
-        log.info("Recorded erasure event id={} userId={} scope={} total={}",
-                event.id(), event.userId(), event.scope(), event.totalErased());
+        log.info("Recorded erasure event id={} userId={} scope={} total={} held={}",
+                event.id(), event.userId(), event.scope(), event.totalErased(), event.heldCategories());
     }
 
     @Override
     public List<ErasureEvent> findByUser(String userId, int limit) {
         var sql = """
                 SELECT id, user_id, scope, memories_erased, sessions_erased, preferences_erased,
-                       requested_by, erased_at
+                       held_categories, requested_by, erased_at
                 FROM erasure_events
                 WHERE user_id = :userId
                 ORDER BY erased_at DESC
@@ -79,8 +86,22 @@ public class JdbcErasureEventStore implements ErasureEventStore {
                 rs.getInt("memories_erased"),
                 rs.getInt("sessions_erased"),
                 rs.getInt("preferences_erased"),
+                deserialize(rs.getString("held_categories")),
                 rs.getString("requested_by"),
                 rs.getTimestamp("erased_at").toInstant()
         );
+    }
+
+    private static String serialize(Set<DataCategory> categories) {
+        return categories.stream().map(Enum::name).sorted().collect(Collectors.joining(","));
+    }
+
+    private static Set<DataCategory> deserialize(String csv) {
+        if (csv == null || csv.isBlank()) return Set.of();
+        var categories = EnumSet.noneOf(DataCategory.class);
+        for (var name : csv.split(",")) {
+            categories.add(DataCategory.valueOf(name.trim()));
+        }
+        return categories;
     }
 }

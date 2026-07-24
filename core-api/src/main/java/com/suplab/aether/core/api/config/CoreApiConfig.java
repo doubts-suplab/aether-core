@@ -5,11 +5,13 @@ import com.suplab.aether.core.memory.context.DefaultPersonalContextProvider;
 import com.suplab.aether.core.memory.embedding.PersonalEmbeddingService;
 import com.suplab.aether.core.memory.erasure.DefaultPersonalDataErasureService;
 import com.suplab.aether.core.memory.erasure.JdbcErasureEventStore;
+import com.suplab.aether.core.memory.erasure.JdbcLegalHoldStore;
 import com.suplab.aether.core.memory.preference.JdbcUserPreferenceStore;
 import com.suplab.aether.core.memory.session.JdbcCognitiveSessionStore;
 import com.suplab.aether.core.memory.store.PGVectorPersonalMemoryStore;
 import com.suplab.aether.core.ports.CognitiveSessionStore;
 import com.suplab.aether.core.ports.ErasureEventStore;
+import com.suplab.aether.core.ports.LegalHoldStore;
 import com.suplab.aether.core.ports.PersonalContextProvider;
 import com.suplab.aether.core.ports.PersonalDataErasurePort;
 import com.suplab.aether.core.ports.PersonalMemoryStore;
@@ -65,16 +67,25 @@ public class CoreApiConfig {
     }
 
     /**
+     * Creates the legal / statutory retention-hold store ({@code legal_holds} table).
+     */
+    @Bean
+    public LegalHoldStore legalHoldStore(NamedParameterJdbcTemplate jdbc) {
+        return new JdbcLegalHoldStore(jdbc);
+    }
+
+    /**
      * Creates the GDPR right-to-erasure service, composing the memory, session, and preference
-     * stores and the erasure audit log.
+     * stores, the erasure audit log, and the legal-hold store (so retention holds gate deletion).
      */
     @Bean
     public PersonalDataErasurePort personalDataErasurePort(PersonalMemoryStore memoryStore,
                                                            CognitiveSessionStore sessionStore,
                                                            UserPreferenceStore preferenceStore,
-                                                           ErasureEventStore erasureEventStore) {
+                                                           ErasureEventStore erasureEventStore,
+                                                           LegalHoldStore legalHoldStore) {
         return new DefaultPersonalDataErasureService(memoryStore, sessionStore, preferenceStore,
-                erasureEventStore);
+                erasureEventStore, legalHoldStore);
     }
 
     /**

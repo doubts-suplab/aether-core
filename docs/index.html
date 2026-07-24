@@ -68,6 +68,7 @@
     .method { font-family: 'SF Mono', monospace; font-size: 0.8rem; font-weight: 700; }
     .method.get { color: var(--green); }
     .method.post { color: var(--accent); }
+    .method.put { color: var(--accent); }
     .method.delete { color: var(--red); }
     code { font-family: 'SF Mono', monospace; font-size: 0.82rem; background: var(--surface); padding: 0.15rem 0.4rem; border-radius: 4px; border: 1px solid var(--border); }
 
@@ -250,7 +251,17 @@
       <tr>
         <td><span class="method get">GET</span></td>
         <td><code>/api/v1/users/{userId}/erasures</code></td>
-        <td>Erasure audit history (append-only)</td>
+        <td>Erasure audit history (append-only, records held categories)</td>
+      </tr>
+      <tr>
+        <td><span class="method put">PUT</span></td>
+        <td><code>/api/v1/users/{userId}/legal-holds/{category}</code></td>
+        <td>Place a legal / statutory retention hold on a data category</td>
+      </tr>
+      <tr>
+        <td><span class="method delete">DELETE</span></td>
+        <td><code>/api/v1/users/{userId}/legal-holds/{category}</code></td>
+        <td>Lift a retention hold</td>
       </tr>
       <tr>
         <td><span class="method get">GET</span></td>
@@ -291,7 +302,7 @@
     <div class="roadmap-item">
       <div class="dot done"></div>
       <div class="phase-label">Phase 3</div>
-      <div class="phase-name">GDPR + Privacy Controls — right to erasure (memories + full account) with append-only erasure audit log (V006); export + retention purge follow-up</div>
+      <div class="phase-name">GDPR + Privacy Controls — right to erasure (memories + full account), append-only audit (V006), and multi-jurisdiction legal / statutory retention holds (V007); export + retention purge follow-up</div>
       <span class="status-badge done">Core Complete</span>
     </div>
     <div class="roadmap-item">

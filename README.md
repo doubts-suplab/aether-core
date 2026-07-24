@@ -38,9 +38,12 @@ cd ../.. && mvn spring-boot:run -pl core-api
 | `PATCH` | `/api/v1/tenants/{tenantId}/users/{userId}/sessions/{sessionId}/turns` | Append a turn to a session |
 | `POST` | `/api/v1/tenants/{tenantId}/users/{userId}/sessions/{sessionId}/close` | Close a session |
 | `GET`/`PUT` | `/api/v1/users/{userId}/preferences` | Read / replace user preferences |
-| `DELETE` | `/api/v1/users/{userId}/memories` | **GDPR erasure** — erase all memories (active + archived) |
-| `DELETE` | `/api/v1/users/{userId}` | **GDPR erasure** — full account erasure (memories + sessions + preferences) |
-| `GET` | `/api/v1/users/{userId}/erasures` | Erasure audit history (append-only) |
+| `DELETE` | `/api/v1/users/{userId}/memories` | **Erasure** — erase all memories (active + archived); retains categories under legal hold |
+| `DELETE` | `/api/v1/users/{userId}` | **Erasure** — full account (memories + sessions + preferences); retains categories under legal hold |
+| `GET` | `/api/v1/users/{userId}/erasures` | Erasure audit history (append-only, records any `heldCategories`) |
+| `GET` | `/api/v1/users/{userId}/legal-holds` | List active legal / statutory retention holds |
+| `PUT` | `/api/v1/users/{userId}/legal-holds/{category}` | Place a retention hold on a data category (`MEMORIES`/`SESSIONS`/`PREFERENCES`) |
+| `DELETE` | `/api/v1/users/{userId}/legal-holds/{category}` | Lift a retention hold |
 | `GET` | `/actuator/health` | Liveness + readiness probes |
 
 ## Memory Types

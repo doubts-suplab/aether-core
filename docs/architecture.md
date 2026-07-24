@@ -55,13 +55,21 @@ com.suplab.aether.core.domain
   PersonalContext       — record: assembled snapshot served to Grid
   AgentDecisionFeedback — record: Grid decision feedback from Kafka
   DecisionOutcome       — enum: CORRECT | INCORRECT | OVERRIDDEN
+  ErasureScope          — enum: MEMORIES | ACCOUNT
+  ErasureEvent          — record: append-only erasure audit entry (counts + heldCategories, no content)
+  DataCategory          — enum: MEMORIES | SESSIONS | PREFERENCES (granularity of a retention hold)
+  LegalHold             — record: userId, category, reason, placedBy, placedAt
 
 com.suplab.aether.core.ports
-  PersonalMemoryStore     — driven port: save, findSimilar, findByType, delete, countByUser
+  PersonalMemoryStore     — driven port: save, findSimilar, findByType, delete, countByUser,
+                            deleteAllByUser (erasure)
   PersonalContextProvider — driven port: buildContext(tenantId, userId)
-  CognitiveSessionStore   — driven port: save, findById, findActive, findByUser
-  UserPreferenceStore     — driven port: find, save (replace semantics)
+  CognitiveSessionStore   — driven port: save, findById, findActive, findByUser, deleteAllByUser
+  UserPreferenceStore     — driven port: find, save (replace semantics), deleteByUser
   MemoryLifecyclePort     — driven port: runLifecycle() → LifecycleResult
+  ErasureEventStore       — driven port: record, findByUser (append-only audit log)
+  LegalHoldStore          — driven port: place, lift, heldCategories, findByUser
+  PersonalDataErasurePort — driving port: eraseMemories, eraseAccount (hold-aware)
 ```
 
 ### `core-memory` — Persistence Adapters
@@ -103,6 +111,13 @@ com.suplab.aether.core.memory.lifecycle
     • Set-based decay: strength -= decay_rate × days_since_access (grace period 7d)
     • Atomic archive via data-modifying CTE (DELETE … RETURNING → INSERT)
 
+com.suplab.aether.core.memory.erasure
+  DefaultPersonalDataErasureService  — implements PersonalDataErasurePort
+    • Consults LegalHoldStore.heldCategories(); skips held categories, records them
+    • eraseMemories (memories only) · eraseAccount (memories + sessions + preferences)
+  JdbcErasureEventStore  — implements ErasureEventStore (INSERT + scoped SELECT only)
+  JdbcLegalHoldStore     — implements LegalHoldStore (upsert on user_id+category)
+
 com.suplab.aether.core.memory.embedding
   PersonalEmbeddingService  — Ollama RestClient adapter
     • embed(text) → float[384]
@@ -125,8 +140,10 @@ com.suplab.aether.core.api.controller
                                 POST create · GET list · GET {sessionId}
                                 PATCH {sessionId}/turns · POST {sessionId}/close
   UserPreferenceController    — GET/PUT /api/v1/users/{userId}/preferences
-  DataSubjectController       — GDPR erasure: DELETE /api/v1/users/{userId}/memories,
+  DataSubjectController       — right to erasure: DELETE /api/v1/users/{userId}/memories,
                                 DELETE /api/v1/users/{userId}, GET .../erasures (audit history)
+  LegalHoldController         — retention holds: GET /api/v1/users/{userId}/legal-holds,
+                                PUT/DELETE .../legal-holds/{category}
 
 com.suplab.aether.core.api.feedback
   GridFeedbackListener  — @KafkaListener on aether.core.feedback (opt-in)
@@ -138,7 +155,8 @@ com.suplab.aether.core.api.lifecycle
 
 com.suplab.aether.core.api.config
   CoreApiConfig  — @Bean wiring: PersonalMemoryStore, CognitiveSessionStore,
-                   UserPreferenceStore, PersonalContextProvider, PersonalEmbeddingService
+                   UserPreferenceStore, ErasureEventStore, LegalHoldStore,
+                   PersonalDataErasurePort, PersonalContextProvider, PersonalEmbeddingService
 ```
 
 ### `core-infra` — Infrastructure
@@ -200,11 +218,15 @@ Same columns as `personal_memories` (embedding retained for potential restore) p
 
 **Memory lifecycle:** retrieval reinforces (`+0.1` strength per read); the scheduler decays memories not accessed for 7+ days at `0.01 × days_since_access` per run and archives what falls below the threshold. All rates configurable under `aether.core.memory.*`.
 
-### `erasure_events` table (V006)
+### `erasure_events` table (V006, extended in V007)
 
-Append-only audit log for GDPR right-to-erasure. Columns: `id`, `user_id`, `scope` (`MEMORIES` | `ACCOUNT`), `memories_erased`, `sessions_erased`, `preferences_erased`, `requested_by`, `erased_at`. Indexed on `(user_id, erased_at DESC)`. It records only the subject's own `user_id` and operation metadata — **never memory content** — so it may be retained to demonstrate compliance (Article 5(2)) after the data is gone. Write-once: there is no update or delete path.
+Append-only audit log for right-to-erasure. Columns: `id`, `user_id`, `scope` (`MEMORIES` | `ACCOUNT`), `memories_erased`, `sessions_erased`, `preferences_erased`, `held_categories` (V007 — sorted CSV of `DataCategory` names retained under legal hold, `''` when none), `requested_by`, `erased_at`. Indexed on `(user_id, erased_at DESC)`. It records only the subject's own `user_id` and operation metadata — **never memory content** — so it may be retained to demonstrate compliance (Article 5(2)) after the data is gone. Write-once: there is no update or delete path.
 
-**Right to erasure (Article 17):** `PersonalDataErasurePort` (`DefaultPersonalDataErasureService`) composes the memory, session, and preference stores. `eraseMemories` deletes the user's memories (active + archived — embeddings are in-row, so they go with the rows); `eraseAccount` additionally deletes cognitive sessions (across every tenant) and preferences. Each operation appends an `ErasureEvent`. Erasure is **Core-local** — Grid reads personal context live, so there is no cross-service propagation to perform.
+### `legal_holds` table (V007)
+
+Legal / statutory retention holds that gate erasure. Columns: `id`, `user_id`, `category` (`MEMORIES` | `SESSIONS` | `PREFERENCES`), `reason`, `placed_by`, `placed_at`, with a `UNIQUE (user_id, category)` constraint (one hold per category, `place` upserts). Indexed on `(user_id, placed_at DESC)`.
+
+**Right to erasure (Article 17) with retention holds:** `PersonalDataErasurePort` (`DefaultPersonalDataErasureService`) composes the memory, session, and preference stores plus the `LegalHoldStore`. Before deleting any category it reads `heldCategories(userId)` and **skips every held category**; `eraseMemories` deletes the user's memories (active + archived — embeddings are in-row, so they go with the rows) unless held; `eraseAccount` additionally deletes cognitive sessions (across every tenant) and preferences unless held. The recorded `ErasureEvent` names the retained categories in `heldCategories`, so a partial erasure is auditable rather than silent. This is the seam that makes erasure **multi-jurisdiction**: the delete-on-request + immutable-audit primitive is jurisdiction-neutral, and the retention-hold check uniformly satisfies the statutory exceptions of GDPR Art. 17(3), CCPA §1798.105(d), and sectoral US law (HIPAA/GLBA). Holds are placed and lifted by legal / compliance operators via `LegalHoldController`. Erasure is **Core-local** — Grid reads personal context live, so there is no cross-service propagation to perform. With no holds in place, erasure behaves as an unconditional delete.
 
 ---
 

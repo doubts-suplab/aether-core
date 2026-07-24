@@ -1,5 +1,6 @@
 package com.suplab.aether.core.memory.erasure;
 
+import com.suplab.aether.core.domain.DataCategory;
 import com.suplab.aether.core.domain.ErasureEvent;
 import com.suplab.aether.core.domain.ErasureScope;
 import org.flywaydb.core.Flyway;
@@ -57,5 +58,25 @@ class JdbcErasureEventStoreIT {
         store.record(ErasureEvent.of(userA, ErasureScope.ACCOUNT, 1, 1, 1, "self"));
 
         assertThat(store.findByUser("user-" + UUID.randomUUID(), 10)).isEmpty();
+    }
+
+    @Test
+    void record_persistsHeldCategories_roundTrip() {
+        var userId = "user-" + UUID.randomUUID();
+        store.record(ErasureEvent.of(userId, ErasureScope.ACCOUNT, 9, 0, 1,
+                java.util.Set.of(DataCategory.SESSIONS), "ops@acme"));
+
+        var event = store.findByUser(userId, 10).getFirst();
+        assertThat(event.heldCategories()).containsExactly(DataCategory.SESSIONS);
+        assertThat(event.hasHolds()).isTrue();
+        assertThat(event.sessionsErased()).isZero();
+    }
+
+    @Test
+    void record_defaultsToNoHeldCategories() {
+        var userId = "user-" + UUID.randomUUID();
+        store.record(ErasureEvent.of(userId, ErasureScope.MEMORIES, 3, 0, 0, "self"));
+
+        assertThat(store.findByUser(userId, 10).getFirst().heldCategories()).isEmpty();
     }
 }

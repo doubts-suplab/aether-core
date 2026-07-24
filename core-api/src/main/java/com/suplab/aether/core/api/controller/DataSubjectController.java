@@ -22,7 +22,9 @@ import java.util.Map;
  * <p>Every path is scoped by {@code userId} — the data subject. Erasure is Core-local and permanent;
  * each operation is written to the append-only erasure audit log, which survives the erased data as
  * proof of compliance. {@code requestedBy} identifies who asked (the subject, or an operator acting on
- * their behalf) and defaults to {@code data-subject}.</p>
+ * their behalf) and defaults to {@code data-subject}. A category under a legal hold (see
+ * {@link LegalHoldController}) is retained rather than deleted and is reported in the event's
+ * {@code heldCategories}, so a partial erasure is auditable rather than silent.</p>
  */
 @RestController
 @RequestMapping("/api/v1/users/{userId}")
@@ -90,6 +92,7 @@ public class DataSubjectController {
                 "sessionsErased", event.sessionsErased(),
                 "preferencesErased", event.preferencesErased(),
                 "totalErased", event.totalErased(),
+                "heldCategories", event.heldCategories().stream().map(Enum::name).sorted().toList(),
                 "requestedBy", event.requestedBy(),
                 "erasedAt", event.erasedAt().toString());
     }
