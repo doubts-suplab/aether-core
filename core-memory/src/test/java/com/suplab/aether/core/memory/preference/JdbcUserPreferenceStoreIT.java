@@ -49,6 +49,17 @@ class JdbcUserPreferenceStoreIT {
     }
 
     @Test
+    void deleteByUser_erasesPreferences() {
+        var userId = "user-" + UUID.randomUUID();
+        store.save(userId, Map.of("communication-style", "async"));
+
+        assertThat(store.deleteByUser(userId)).isEqualTo(1);
+        assertThat(store.find(userId)).isEmpty();
+        // erasing again is a no-op
+        assertThat(store.deleteByUser(userId)).isZero();
+    }
+
+    @Test
     void save_andFind_roundTrip() {
         var userId = "user-" + UUID.randomUUID();
         store.save(userId, Map.of("communication-style", "async", "notification-frequency", "daily"));

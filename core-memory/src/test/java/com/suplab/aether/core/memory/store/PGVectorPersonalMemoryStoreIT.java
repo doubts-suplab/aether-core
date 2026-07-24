@@ -40,8 +40,31 @@ class PGVectorPersonalMemoryStoreIT {
                 .load()
                 .migrate();
 
-        var jdbc = new NamedParameterJdbcTemplate(dataSource);
+        jdbc = new NamedParameterJdbcTemplate(dataSource);
         store = new PGVectorPersonalMemoryStore(jdbc);
+    }
+
+    private NamedParameterJdbcTemplate jdbc;
+
+    @Test
+    void deleteAllByUser_erasesActiveAndArchivedMemories() {
+        var userId = "user-" + UUID.randomUUID();
+        store.save(PersonalMemory.create(userId, MemoryType.EPISODIC, "active memory"), new float[384]);
+        // seed one archived row directly (the lifecycle sweep normally writes these)
+        jdbc.update("""
+                INSERT INTO personal_memories_archive
+                    (id, user_id, memory_type, content, strength, access_count,
+                     created_at, last_accessed_at, archived_at)
+                VALUES (gen_random_uuid(), :userId, 'SEMANTIC', 'archived memory', 0.05, 3,
+                        NOW(), NOW(), NOW())
+                """, new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("userId", userId));
+
+        int erased = store.deleteAllByUser(userId);
+
+        assertThat(erased).isEqualTo(2); // 1 active + 1 archived
+        assertThat(store.countByUser(userId)).isZero();
+        // a second user's data is untouched (scoping)
+        assertThat(store.deleteAllByUser("user-" + UUID.randomUUID())).isZero();
     }
 
     @Test

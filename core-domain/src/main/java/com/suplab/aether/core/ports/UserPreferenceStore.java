@@ -20,4 +20,12 @@ public interface UserPreferenceStore {
      * Replaces the user's preference map. Passing an empty map clears all preferences.
      */
     void save(String userId, Map<String, Object> preferences);
+
+    /**
+     * Hard-deletes the user's preference record, for GDPR right-to-erasure.
+     *
+     * @param userId the user whose preferences to erase
+     * @return the number of preference rows deleted (0 or 1)
+     */
+    int deleteByUser(String userId);
 }

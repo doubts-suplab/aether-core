@@ -65,4 +65,12 @@ public class JdbcUserPreferenceStore implements UserPreferenceStore {
         jdbc.update(sql, params);
         log.debug("Saved {} preference(s) for userId={}", preferences.size(), userId);
     }
+
+    @Override
+    public int deleteByUser(String userId) {
+        int deleted = jdbc.update("DELETE FROM user_preferences WHERE user_id = :userId",
+                new MapSqlParameterSource("userId", userId));
+        log.info("Erased {} preference row(s) for userId={}", deleted, userId);
+        return deleted;
+    }
 }

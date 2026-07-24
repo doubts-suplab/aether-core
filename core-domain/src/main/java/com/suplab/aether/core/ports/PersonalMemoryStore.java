@@ -54,6 +54,15 @@ public interface PersonalMemoryStore {
     void delete(UUID memoryId, String userId);
 
     /**
+     * Hard-deletes <strong>all</strong> of a user's personal memories — both active and archived —
+     * for GDPR right-to-erasure. Embeddings live in-row, so they are erased with the rows.
+     *
+     * @param userId the user whose memories to erase
+     * @return the total number of memory rows deleted (active + archived)
+     */
+    int deleteAllByUser(String userId);
+
+    /**
      * Returns the total number of memories stored for a user.
      *
      * @param userId the user to count for

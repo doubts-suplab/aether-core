@@ -144,6 +144,19 @@ public class PGVectorPersonalMemoryStore implements PersonalMemoryStore {
         return count != null ? count : 0L;
     }
 
+    @Override
+    public int deleteAllByUser(String userId) {
+        // GDPR right-to-erasure: destroy the user's memories in both the active and archive tables.
+        // Embeddings live in-row, so they are erased with the rows.
+        var params = new MapSqlParameterSource("userId", userId);
+        int active = jdbc.update("DELETE FROM personal_memories WHERE user_id = :userId", params);
+        int archived = jdbc.update("DELETE FROM personal_memories_archive WHERE user_id = :userId", params);
+        int total = active + archived;
+        log.info("Erased {} personal memory row(s) for userId={} (active={}, archived={})",
+                total, userId, active, archived);
+        return total;
+    }
+
     /**
      * Converts a float array to the {@code [x,y,z,...]} string format expected by pgvector's
      * {@code ::vector} cast operator.

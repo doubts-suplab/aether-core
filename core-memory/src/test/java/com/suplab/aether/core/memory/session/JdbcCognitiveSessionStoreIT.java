@@ -45,6 +45,19 @@ class JdbcCognitiveSessionStoreIT {
     }
 
     @Test
+    void deleteAllByUser_erasesSessionsAcrossTenants() {
+        var userId = "user-" + UUID.randomUUID();
+        store.save(CognitiveSession.start("acme", userId));
+        store.save(CognitiveSession.start("globex", userId)); // a different tenant
+
+        int erased = store.deleteAllByUser(userId);
+
+        assertThat(erased).isEqualTo(2);
+        assertThat(store.findByUser("acme", userId, 10)).isEmpty();
+        assertThat(store.findByUser("globex", userId, 10)).isEmpty();
+    }
+
+    @Test
     void save_andFindById_roundTrip() {
         var userId = "user-" + UUID.randomUUID();
         var session = CognitiveSession.start("acme", userId)

@@ -63,16 +63,26 @@
 > **Note:** Phases 4 and 5 were delivered before Phase 3 by explicit prioritisation.
 > This phase takes migration **V006** (V005 was consumed by the Phase 5 archive table).
 
-**Goal:** Full right-to-erasure, data retention configuration, and memory export.
+**Goal:** Full right-to-erasure, multi-jurisdiction retention holds, data retention configuration, and memory export.
+
+> **Multi-jurisdiction note:** the erasure primitive (delete on request + immutable audit) is
+> jurisdiction-neutral — it satisfies the "delete" right of GDPR (Art. 17), CCPA/CPRA, the ~20 US
+> state privacy laws, LGPD, PIPL, DPDP, and others alike. The mechanic that differs is **statutory
+> retention exceptions** (GDPR Art. 17(3), CCPA §1798.105(d), HIPAA/GLBA mandates), which the
+> `legal_holds` seam below handles uniformly.
 
 | Deliverable | Status |
 |---|---|
-| `DELETE /api/v1/users/{userId}/memories` — erase all memories | ⏳ |
-| `DELETE /api/v1/users/{userId}` — full account erasure | ⏳ |
-| `data_retention_days` per user configurable | ⏳ |
-| Memory export: `GET /api/v1/users/{userId}/export` (JSON) | ⏳ |
-| Audit log for erasure events | ⏳ |
-| V006 migration: user_privacy_settings table | ⏳ |
+| `DELETE /api/v1/users/{userId}/memories` — erase all memories (active + archived) | ✅ |
+| `DELETE /api/v1/users/{userId}` — full account erasure (memories + sessions + preferences) | ✅ |
+| Audit log for erasure events (append-only) + `GET /api/v1/users/{userId}/erasures` | ✅ |
+| V006 migration: `erasure_events` audit table | ✅ |
+| Legal / statutory **retention holds** — erasure retains held categories, records them in the audit (`heldCategories`) | ✅ |
+| `legal_holds` store + `PUT/DELETE/GET /api/v1/users/{userId}/legal-holds/{category}` | ✅ |
+| V007 migration: `legal_holds` table + `held_categories` column | ✅ |
+| Memory export: `GET /api/v1/users/{userId}/export` (JSON, portability — Art. 20 / CCPA right-to-know) | ⏳ (follow-up) |
+| Requester identity verification on erasure (CCPA verifiable request) | ⏳ (follow-up) |
+| `data_retention_days` per user configurable + retention purge (`user_privacy_settings`, V008) | ⏳ (follow-up) |
 
 ---
 

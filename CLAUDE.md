@@ -18,7 +18,7 @@
 
 **Sister repository:** [`suplab/aether-grid`](https://github.com/suplab/aether-grid) — the enterprise agent mesh that consumes Core's `GET /api/v1/personal-context/{tenantId}/{userId}` endpoint via `AetherCoreHttpAdapter`.
 
-**Current status:** Phases 0–2, 4, 5 complete. Next phase: Phase 3 — GDPR + Right to Erasure (deferred earlier by explicit prioritisation, takes migration V006).
+**Current status:** Phases 0–2, 4, 5 complete. Phase 3 — GDPR + Right to Erasure 🔄 core complete: right-to-erasure (memories-only + full account, active + archived) with an append-only `erasure_events` audit log (V006), plus **multi-jurisdiction legal / statutory retention holds** (V007) — erasure retains categories under hold (GDPR Art. 17(3), CCPA §1798.105(d), HIPAA/GLBA) and records them in the audit; data-subject + legal-hold REST endpoints; Testcontainers ITs wired into CI. Follow-up: memory export (Article 20 portability), requester identity verification, `data_retention_days` retention purge (V008).
 
 **One runnable application:**
 - `core-api` — Personal Cognitive Engine API (port 8082)

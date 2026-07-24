@@ -68,6 +68,7 @@
     .method { font-family: 'SF Mono', monospace; font-size: 0.8rem; font-weight: 700; }
     .method.get { color: var(--green); }
     .method.post { color: var(--accent); }
+    .method.put { color: var(--accent); }
     .method.delete { color: var(--red); }
     code { font-family: 'SF Mono', monospace; font-size: 0.82rem; background: var(--surface); padding: 0.15rem 0.4rem; border-radius: 4px; border: 1px solid var(--border); }
 
@@ -108,7 +109,7 @@
   <p class="hero-sub">Personal cognitive engine — individual memory, reasoning, and emotional context for human-centric AI.</p>
   <div class="badges">
     <span class="badge green">Phases 0–2, 4, 5 Complete</span>
-    <span class="badge accent">Next: Phase 3 — GDPR + Privacy</span>
+    <span class="badge accent">Phase 3 — GDPR Right to Erasure (core)</span>
     <span class="badge">Java 21</span>
     <span class="badge">Spring Boot 3.3</span>
     <span class="badge">pgvector</span>
@@ -238,6 +239,31 @@
         <td>Delete a specific memory</td>
       </tr>
       <tr>
+        <td><span class="method delete">DELETE</span></td>
+        <td><code>/api/v1/users/{userId}/memories</code></td>
+        <td>GDPR erasure — erase all memories (active + archived)</td>
+      </tr>
+      <tr>
+        <td><span class="method delete">DELETE</span></td>
+        <td><code>/api/v1/users/{userId}</code></td>
+        <td>GDPR erasure — full account (memories + sessions + preferences)</td>
+      </tr>
+      <tr>
+        <td><span class="method get">GET</span></td>
+        <td><code>/api/v1/users/{userId}/erasures</code></td>
+        <td>Erasure audit history (append-only, records held categories)</td>
+      </tr>
+      <tr>
+        <td><span class="method put">PUT</span></td>
+        <td><code>/api/v1/users/{userId}/legal-holds/{category}</code></td>
+        <td>Place a legal / statutory retention hold on a data category</td>
+      </tr>
+      <tr>
+        <td><span class="method delete">DELETE</span></td>
+        <td><code>/api/v1/users/{userId}/legal-holds/{category}</code></td>
+        <td>Lift a retention hold</td>
+      </tr>
+      <tr>
         <td><span class="method get">GET</span></td>
         <td><code>/actuator/health</code></td>
         <td>Liveness + readiness probes</td>
@@ -274,10 +300,10 @@
       <span class="status-badge done">Complete</span>
     </div>
     <div class="roadmap-item">
-      <div class="dot planned"></div>
+      <div class="dot done"></div>
       <div class="phase-label">Phase 3</div>
-      <div class="phase-name">GDPR + Privacy Controls — right to erasure, data retention, memory export (deferred, next up)</div>
-      <span class="status-badge planned">Next Up</span>
+      <div class="phase-name">GDPR + Privacy Controls — right to erasure (memories + full account), append-only audit (V006), and multi-jurisdiction legal / statutory retention holds (V007); export + retention purge follow-up</div>
+      <span class="status-badge done">Core Complete</span>
     </div>
     <div class="roadmap-item">
       <div class="dot done"></div>
