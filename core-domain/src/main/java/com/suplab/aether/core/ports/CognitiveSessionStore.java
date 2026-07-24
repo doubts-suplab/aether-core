@@ -35,4 +35,13 @@ public interface CognitiveSessionStore {
      * Returns the user's sessions in the tenant, most recently active first.
      */
     List<CognitiveSession> findByUser(String tenantId, String userId, int limit);
+
+    /**
+     * Hard-deletes <strong>all</strong> of a user's cognitive sessions across every tenant, for GDPR
+     * right-to-erasure. Erasure is a property of the person, not a single tenant relationship.
+     *
+     * @param userId the user whose sessions to erase
+     * @return the number of session rows deleted
+     */
+    int deleteAllByUser(String userId);
 }

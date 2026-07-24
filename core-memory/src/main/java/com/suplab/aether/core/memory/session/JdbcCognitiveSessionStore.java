@@ -136,6 +136,15 @@ public class JdbcCognitiveSessionStore implements CognitiveSessionStore {
         return jdbc.query(sql, params, this::mapRow);
     }
 
+    @Override
+    public int deleteAllByUser(String userId) {
+        // GDPR right-to-erasure: a person's sessions are erased across every tenant they used.
+        int deleted = jdbc.update("DELETE FROM cognitive_sessions WHERE user_id = :userId",
+                new MapSqlParameterSource("userId", userId));
+        log.info("Erased {} cognitive session row(s) for userId={}", deleted, userId);
+        return deleted;
+    }
+
     private CognitiveSession mapRow(ResultSet rs, int row) throws SQLException {
         return new CognitiveSession(
                 UUID.fromString(rs.getString("session_id")),

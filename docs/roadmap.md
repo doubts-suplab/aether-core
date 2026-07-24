@@ -67,12 +67,12 @@
 
 | Deliverable | Status |
 |---|---|
-| `DELETE /api/v1/users/{userId}/memories` — erase all memories | ⏳ |
-| `DELETE /api/v1/users/{userId}` — full account erasure | ⏳ |
-| `data_retention_days` per user configurable | ⏳ |
-| Memory export: `GET /api/v1/users/{userId}/export` (JSON) | ⏳ |
-| Audit log for erasure events | ⏳ |
-| V006 migration: user_privacy_settings table | ⏳ |
+| `DELETE /api/v1/users/{userId}/memories` — erase all memories (active + archived) | ✅ |
+| `DELETE /api/v1/users/{userId}` — full account erasure (memories + sessions + preferences) | ✅ |
+| Audit log for erasure events (append-only) + `GET /api/v1/users/{userId}/erasures` | ✅ |
+| V006 migration: `erasure_events` audit table | ✅ |
+| Memory export: `GET /api/v1/users/{userId}/export` (JSON, portability) | ⏳ (follow-up) |
+| `data_retention_days` per user configurable + retention purge (`user_privacy_settings`, V007) | ⏳ (follow-up) |
 
 ---
 

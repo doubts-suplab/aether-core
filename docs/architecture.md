@@ -125,6 +125,8 @@ com.suplab.aether.core.api.controller
                                 POST create · GET list · GET {sessionId}
                                 PATCH {sessionId}/turns · POST {sessionId}/close
   UserPreferenceController    — GET/PUT /api/v1/users/{userId}/preferences
+  DataSubjectController       — GDPR erasure: DELETE /api/v1/users/{userId}/memories,
+                                DELETE /api/v1/users/{userId}, GET .../erasures (audit history)
 
 com.suplab.aether.core.api.feedback
   GridFeedbackListener  — @KafkaListener on aether.core.feedback (opt-in)
@@ -197,6 +199,12 @@ Docker Compose for local dev, standalone Flyway migrations.
 Same columns as `personal_memories` (embedding retained for potential restore) plus `archived_at TIMESTAMPTZ`. Faded memories (`strength < 0.1` after decay) are **moved** here by the nightly lifecycle job — never silently deleted. Indexed on `(user_id, archived_at DESC)`.
 
 **Memory lifecycle:** retrieval reinforces (`+0.1` strength per read); the scheduler decays memories not accessed for 7+ days at `0.01 × days_since_access` per run and archives what falls below the threshold. All rates configurable under `aether.core.memory.*`.
+
+### `erasure_events` table (V006)
+
+Append-only audit log for GDPR right-to-erasure. Columns: `id`, `user_id`, `scope` (`MEMORIES` | `ACCOUNT`), `memories_erased`, `sessions_erased`, `preferences_erased`, `requested_by`, `erased_at`. Indexed on `(user_id, erased_at DESC)`. It records only the subject's own `user_id` and operation metadata — **never memory content** — so it may be retained to demonstrate compliance (Article 5(2)) after the data is gone. Write-once: there is no update or delete path.
+
+**Right to erasure (Article 17):** `PersonalDataErasurePort` (`DefaultPersonalDataErasureService`) composes the memory, session, and preference stores. `eraseMemories` deletes the user's memories (active + archived — embeddings are in-row, so they go with the rows); `eraseAccount` additionally deletes cognitive sessions (across every tenant) and preferences. Each operation appends an `ErasureEvent`. Erasure is **Core-local** — Grid reads personal context live, so there is no cross-service propagation to perform.
 
 ---
 

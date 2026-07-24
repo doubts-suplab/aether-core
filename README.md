@@ -38,6 +38,9 @@ cd ../.. && mvn spring-boot:run -pl core-api
 | `PATCH` | `/api/v1/tenants/{tenantId}/users/{userId}/sessions/{sessionId}/turns` | Append a turn to a session |
 | `POST` | `/api/v1/tenants/{tenantId}/users/{userId}/sessions/{sessionId}/close` | Close a session |
 | `GET`/`PUT` | `/api/v1/users/{userId}/preferences` | Read / replace user preferences |
+| `DELETE` | `/api/v1/users/{userId}/memories` | **GDPR erasure** — erase all memories (active + archived) |
+| `DELETE` | `/api/v1/users/{userId}` | **GDPR erasure** — full account erasure (memories + sessions + preferences) |
+| `GET` | `/api/v1/users/{userId}/erasures` | Erasure audit history (append-only) |
 | `GET` | `/actuator/health` | Liveness + readiness probes |
 
 ## Memory Types

@@ -5,7 +5,7 @@
 
 ---
 
-**Active Phase:** Phase 3 — GDPR + Right to Erasure (returning after 4/5 prioritisation)
+**Active Phase:** Phase 3 — GDPR + Right to Erasure 🔄 (core complete: erasure + audit; export & retention follow-up)
 > Phases 4 and 5 were prioritised ahead of Phase 3 (GDPR) by explicit decision.
 
 | Phase | Name | Status | Sessions |
@@ -13,7 +13,7 @@
 | 0 | Scaffold | ✅ Complete | 1 |
 | 1 | Personal Memory Engine | ✅ Complete | 2 |
 | 2 | Cognitive Session Management | ✅ Complete | 2 |
-| 3 | GDPR + Right to Erasure | ⏳ Planned (deferred) | — |
+| 3 | GDPR + Right to Erasure | 🔄 Core complete (erasure + audit) | 4 |
 | 4 | Grid Feedback Loop (Kafka) | ✅ Complete | 3 |
 | 5 | Memory Decay + Reinforcement Scheduler | ✅ Complete | 3 |
 | 6 | Kubernetes + Helm | ⏳ Planned | — |
@@ -225,3 +225,50 @@
 - `JdbcMemoryLifecycleServiceIT` (6, Testcontainers/CI): decay math, grace period, archive move, decay-then-archive same run, strength floor at 0, totalRemaining accuracy
 
 ### Files changed: 9
+
+---
+
+## Phase 3 — GDPR + Right to Erasure 🔄 (session 4 — erasure + audit)
+
+**Commit:** `feat(core): GDPR right-to-erasure with append-only audit log (V006)`
+
+Aether Core holds a user's personal data across four tables — `personal_memories` (+ its in-row
+embedding), `personal_memories_archive`, `cognitive_sessions`, and `user_preferences`. Phase 3 adds
+GDPR Article 17 right-to-erasure over all of them, with an audit trail that survives the erased data.
+
+### What was done
+
+**Erasure (Core-local, permanent):**
+- `PersonalDataErasurePort` + `DefaultPersonalDataErasureService` (core-memory): `eraseMemories`
+  (memories only, active + archived) and `eraseAccount` (memories + sessions + preferences). Erasure
+  is Core-local — Grid reads personal context live, so no cross-service propagation is needed.
+- Store deletions: `PersonalMemoryStore.deleteAllByUser` (active **and** archive; embeddings are
+  in-row so they go with the rows), `CognitiveSessionStore.deleteAllByUser` (across every tenant —
+  erasure is a property of the person), `UserPreferenceStore.deleteByUser`.
+- `DataSubjectController` (core-api): `DELETE /api/v1/users/{userId}/memories`,
+  `DELETE /api/v1/users/{userId}`, `GET /api/v1/users/{userId}/erasures` (audit history);
+  `requestedBy` defaults to `data-subject`.
+
+**Audit (accountability, Article 5(2)):**
+- `ErasureEvent` domain record + `ErasureEventStore` port + `JdbcErasureEventStore` — **append-only**
+  (`record` + scoped `findByUser`; no update/delete). Records only the subject's own `userId`, scope,
+  per-store counts, requester, and timestamp — **never any memory content** — so it may be retained to
+  demonstrate compliance after the data is gone.
+- **Migration V006** `erasure_events` (api + core-memory test + core-infra copies).
+
+**Testcontainers green in CI:**
+- `maven-failsafe-plugin` wired in the parent and activated in `core-memory`, so the `*IT` tests
+  (`PGVectorPersonalMemoryStoreIT`, `JdbcCognitiveSessionStoreIT`, `JdbcUserPreferenceStoreIT`,
+  `JdbcMemoryLifecycleServiceIT`, and the new `JdbcErasureEventStoreIT`) now run at `verify`.
+  Previously no failsafe plugin existed, so surefire never ran `*IT`.
+
+**Tests — 54 unit tests green (was ~44):**
+- Domain `ErasureEventTest` (4); engine `DefaultPersonalDataErasureServiceTest` (3, fake stores —
+  memories-only vs. full account, audit recorded); api `DataSubjectControllerTest` (3).
+- Store ITs gain `deleteAllByUser` / `deleteByUser` cases (active+archive, cross-tenant sessions,
+  preferences), plus a new `JdbcErasureEventStoreIT`.
+- `mvn -DskipITs verify` passes the JaCoCo 80% gate; ITs run under failsafe in CI.
+
+### Remaining Phase 3 (follow-up)
+- **Memory export** (`GET …/export`, Article 20 portability).
+- **`data_retention_days`** per user + a retention purge sweep (`user_privacy_settings`, migration V007).
