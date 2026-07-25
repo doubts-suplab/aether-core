@@ -1,4 +1,4 @@
-# Aether Core
+# Æ Aether Core
 
 > Personal cognitive engine — individual memory, reasoning, and emotional context.
 
