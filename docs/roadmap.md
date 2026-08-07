@@ -129,3 +129,22 @@
 ---
 
 > **Aether Grid Roadmap:** [suplab/aether-grid/docs/roadmap.md](https://github.com/suplab/aether-grid/blob/main/docs/roadmap.md)
+
+---
+
+## Ecosystem review — future backlog
+
+> Repo-specific items from the [ecosystem improvement backlog](https://github.com/doubts-suplab/aether/blob/main/docs/roadmaps/ecosystem-improvements.md). Planned, not started.
+> Feasibility: **S** small · **M** moderate · **L** large. License unchanged (AGPL-3.0).
+
+| Item | Feasibility |
+|---|---|
+| Deeper emotional/procedural reasoning | M–L |
+| Memory-strength dynamics + retrieval-quality metrics | M |
+| Embedding + recall performance under load | M |
+| Richer context assembly (beyond simple snapshots) | M |
+| More decay/reinforcement test coverage | S–M |
+| Clearer feedback loop into Grid | M |
+
+Already tracked (Phase 3 follow-ups): memory export (Art. 20 portability), requester identity
+verification, `data_retention_days` retention purge (V008).
