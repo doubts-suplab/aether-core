@@ -44,4 +44,15 @@ public interface CognitiveSessionStore {
      * @return the number of session rows deleted
      */
     int deleteAllByUser(String userId);
+
+    /**
+     * Returns <strong>all</strong> of a user's cognitive sessions across every tenant, for data
+     * portability (Article 20) — most recently active first. Like erasure, export is a property of the
+     * person, not a single tenant relationship.
+     *
+     * @param userId the user whose sessions to export
+     * @param limit  maximum number of sessions to return
+     * @return the user's sessions across all tenants (may be empty)
+     */
+    List<CognitiveSession> findAllByUser(String userId, int limit);
 }

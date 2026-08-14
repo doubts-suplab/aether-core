@@ -114,6 +114,28 @@ public class PGVectorPersonalMemoryStore implements PersonalMemoryStore {
         return reinforced;
     }
 
+    @Override
+    public List<PersonalMemory> findAllByUser(String userId, int limit) {
+        // Plain read for portability — active + archived, NO reinforcement (export is not recall).
+        var sql = """
+                SELECT id, user_id, memory_type, content, strength, access_count,
+                       created_at, last_accessed_at
+                FROM personal_memories
+                WHERE user_id = :userId
+                UNION ALL
+                SELECT id, user_id, memory_type, content, strength, access_count,
+                       created_at, last_accessed_at
+                FROM personal_memories_archive
+                WHERE user_id = :userId
+                ORDER BY created_at DESC
+                LIMIT :limit
+                """;
+        var params = new MapSqlParameterSource()
+                .addValue("userId", userId)
+                .addValue("limit", limit);
+        return jdbc.query(sql, params, this::mapRow);
+    }
+
     private PersonalMemory mapRow(java.sql.ResultSet rs, int row) throws java.sql.SQLException {
         return new PersonalMemory(
                 UUID.fromString(rs.getString("id")),

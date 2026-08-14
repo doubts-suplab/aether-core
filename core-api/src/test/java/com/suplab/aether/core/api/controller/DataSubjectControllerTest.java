@@ -1,9 +1,14 @@
 package com.suplab.aether.core.api.controller;
 
+import com.suplab.aether.core.domain.CognitiveSession;
 import com.suplab.aether.core.domain.ErasureEvent;
 import com.suplab.aether.core.domain.ErasureScope;
+import com.suplab.aether.core.domain.MemoryType;
+import com.suplab.aether.core.domain.PersonalDataExport;
+import com.suplab.aether.core.domain.PersonalMemory;
 import com.suplab.aether.core.ports.ErasureEventStore;
 import com.suplab.aether.core.ports.PersonalDataErasurePort;
+import com.suplab.aether.core.ports.PersonalDataExportPort;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
@@ -34,8 +39,19 @@ class DataSubjectControllerTest {
         }
     }
 
+    private static final class FakeExportPort implements PersonalDataExportPort {
+        String lastUserId;
+        @Override public PersonalDataExport exportAll(String userId) {
+            lastUserId = userId;
+            var memory = PersonalMemory.create(userId, MemoryType.SEMANTIC, "the sky is blue");
+            var session = CognitiveSession.start("t-1", userId);
+            return PersonalDataExport.of(userId, List.of(memory), List.of(session),
+                    Map.of("theme", "dark"));
+        }
+    }
+
     private DataSubjectController controller(FakeErasurePort port) {
-        return new DataSubjectController(port, new FakeEventStore());
+        return new DataSubjectController(port, new FakeEventStore(), new FakeExportPort());
     }
 
     @Test
@@ -70,5 +86,21 @@ class DataSubjectControllerTest {
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat((List<?>) res.getBody()).hasSize(1);
+    }
+
+    @Test
+    void export_returns200WithPortableView() {
+        var res = controller(new FakeErasurePort()).export("u-1");
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        var body = res.getBody();
+        assertThat(body.get("userId")).isEqualTo("u-1");
+        assertThat(body).containsKey("exportedAt");
+        assertThat(body.get("totalRecords")).isEqualTo(3); // 1 memory + 1 session + 1 preference key
+        assertThat((List<?>) body.get("memories")).hasSize(1);
+        assertThat((List<?>) body.get("sessions")).hasSize(1);
+        @SuppressWarnings("unchecked")
+        var preferences = (Map<String, Object>) body.get("preferences");
+        assertThat(preferences).containsEntry("theme", "dark");
     }
 }

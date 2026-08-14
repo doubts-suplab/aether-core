@@ -149,4 +149,20 @@ class JdbcCognitiveSessionStoreIT {
         assertThat(sessions).hasSize(2);
         assertThat(sessions.getFirst().sessionId()).isEqualTo(second.sessionId());
     }
+
+    @Test
+    void findAllByUser_returnsSessionsAcrossEveryTenant() {
+        var userId = "user-" + UUID.randomUUID();
+        store.save(CognitiveSession.start("acme", userId));
+        store.save(CognitiveSession.start("globex", userId)); // a different tenant
+        // another user's session must not leak into the export
+        store.save(CognitiveSession.start("acme", "other-" + UUID.randomUUID()));
+
+        var exported = store.findAllByUser(userId, 10_000);
+
+        assertThat(exported).hasSize(2);
+        assertThat(exported).extracting(CognitiveSession::tenantId)
+                .containsExactlyInAnyOrder("acme", "globex");
+        assertThat(exported).allSatisfy(s -> assertThat(s.userId()).isEqualTo(userId));
+    }
 }

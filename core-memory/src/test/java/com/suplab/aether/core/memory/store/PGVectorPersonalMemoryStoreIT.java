@@ -68,6 +68,49 @@ class PGVectorPersonalMemoryStoreIT {
     }
 
     @Test
+    void findAllByUser_returnsActiveAndArchivedWithoutReinforcing() {
+        var userId = "user-" + UUID.randomUUID();
+        var active = PersonalMemory.create(userId, MemoryType.EPISODIC, "active memory");
+        active = new PersonalMemory(active.id(), userId, MemoryType.EPISODIC, active.content(),
+                0.5, 0, active.createdAt(), active.lastAccessedAt());
+        store.save(active, new float[384]);
+        jdbc.update("""
+                INSERT INTO personal_memories_archive
+                    (id, user_id, memory_type, content, strength, access_count,
+                     created_at, last_accessed_at, archived_at)
+                VALUES (gen_random_uuid(), :userId, 'SEMANTIC', 'archived memory', 0.05, 3,
+                        NOW(), NOW(), NOW())
+                """, new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("userId", userId));
+
+        var exported = store.findAllByUser(userId, 10_000);
+
+        assertThat(exported).hasSize(2); // 1 active + 1 archived
+        assertThat(exported).extracting(PersonalMemory::content)
+                .containsExactlyInAnyOrder("active memory", "archived memory");
+        // export must NOT reinforce: strength and accessCount are unchanged on re-read
+        assertThat(store.findAllByUser(userId, 10_000))
+                .filteredOn(m -> m.content().equals("active memory"))
+                .singleElement()
+                .satisfies(m -> {
+                    assertThat(m.strength()).isCloseTo(0.5, within(0.001));
+                    assertThat(m.accessCount()).isZero();
+                });
+    }
+
+    @Test
+    void findAllByUser_isolatesPerUser() {
+        var userA = "user-" + UUID.randomUUID();
+        var userB = "user-" + UUID.randomUUID();
+        store.save(PersonalMemory.create(userA, MemoryType.EPISODIC, "user A memory"), new float[384]);
+        store.save(PersonalMemory.create(userB, MemoryType.EPISODIC, "user B memory"), new float[384]);
+
+        var exported = store.findAllByUser(userA, 10_000);
+
+        assertThat(exported).hasSize(1);
+        assertThat(exported.getFirst().content()).isEqualTo("user A memory");
+    }
+
+    @Test
     void save_andFindByType_roundTrip() {
         var userId = "user-" + UUID.randomUUID();
         var memory = PersonalMemory.create(userId, MemoryType.EPISODIC, "Presented Q3 roadmap");

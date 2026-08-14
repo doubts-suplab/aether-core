@@ -69,4 +69,16 @@ public interface PersonalMemoryStore {
      * @return non-negative memory count
      */
     long countByUser(String userId);
+
+    /**
+     * Returns <strong>all</strong> of a user's personal memories — both active and archived — as a
+     * plain read for data portability (Article 20). Unlike {@link #findSimilar} / {@link #findByType},
+     * this read <em>does not reinforce</em> the memories it returns; export is administrative, not
+     * cognitive recall. Ordered most-recent first.
+     *
+     * @param userId the user whose memories to export
+     * @param limit  maximum number of memories to return
+     * @return the user's memories (active + archived), most recent first (may be empty)
+     */
+    List<PersonalMemory> findAllByUser(String userId, int limit);
 }
