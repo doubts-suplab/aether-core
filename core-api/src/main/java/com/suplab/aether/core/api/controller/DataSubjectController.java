@@ -1,8 +1,12 @@
 package com.suplab.aether.core.api.controller;
 
+import com.suplab.aether.core.domain.CognitiveSession;
 import com.suplab.aether.core.domain.ErasureEvent;
+import com.suplab.aether.core.domain.PersonalDataExport;
+import com.suplab.aether.core.domain.PersonalMemory;
 import com.suplab.aether.core.ports.ErasureEventStore;
 import com.suplab.aether.core.ports.PersonalDataErasurePort;
+import com.suplab.aether.core.ports.PersonalDataExportPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -17,14 +21,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * GDPR data-subject rights over a user's personal data (right to erasure, Article 17).
+ * GDPR data-subject rights over a user's personal data: right to erasure (Article 17) and data
+ * portability (Article 20 / CCPA right-to-know).
  *
  * <p>Every path is scoped by {@code userId} — the data subject. Erasure is Core-local and permanent;
  * each operation is written to the append-only erasure audit log, which survives the erased data as
  * proof of compliance. {@code requestedBy} identifies who asked (the subject, or an operator acting on
  * their behalf) and defaults to {@code data-subject}. A category under a legal hold (see
  * {@link LegalHoldController}) is retained rather than deleted and is reported in the event's
- * {@code heldCategories}, so a partial erasure is auditable rather than silent.</p>
+ * {@code heldCategories}, so a partial erasure is auditable rather than silent. Export is a read-only
+ * portable snapshot of everything Core holds for the user — it never reinforces or mutates the data.</p>
  */
 @RestController
 @RequestMapping("/api/v1/users/{userId}")
@@ -34,11 +40,14 @@ public class DataSubjectController {
 
     private final PersonalDataErasurePort erasurePort;
     private final ErasureEventStore erasureEventStore;
+    private final PersonalDataExportPort exportPort;
 
     public DataSubjectController(PersonalDataErasurePort erasurePort,
-                                ErasureEventStore erasureEventStore) {
+                                ErasureEventStore erasureEventStore,
+                                PersonalDataExportPort exportPort) {
         this.erasurePort = erasurePort;
         this.erasureEventStore = erasureEventStore;
+        this.exportPort = exportPort;
     }
 
     /**
@@ -81,6 +90,53 @@ public class DataSubjectController {
         var body = erasureEventStore.findByUser(userId, limit).stream()
                 .map(DataSubjectController::toView).toList();
         return ResponseEntity.ok(body);
+    }
+
+    /**
+     * Exports everything Core holds for the user — memories (active + archived), cognitive sessions
+     * across every tenant, and preferences — as a portable, read-only JSON snapshot (Article 20).
+     * This read never reinforces or mutates the user's data.
+     *
+     * @return 200 OK with the export view
+     */
+    @GetMapping("/export")
+    public ResponseEntity<Map<String, Object>> export(@PathVariable String userId) {
+        var export = exportPort.exportAll(userId);
+        log.info("Exported data for userId={} records={}", userId, export.totalRecords());
+        return ResponseEntity.ok(toView(export));
+    }
+
+    private static Map<String, Object> toView(PersonalDataExport export) {
+        return Map.of(
+                "userId", export.userId(),
+                "exportedAt", export.exportedAt().toString(),
+                "totalRecords", export.totalRecords(),
+                "memories", export.memories().stream().map(DataSubjectController::memoryView).toList(),
+                "sessions", export.sessions().stream().map(DataSubjectController::sessionView).toList(),
+                "preferences", export.preferences());
+    }
+
+    private static Map<String, Object> memoryView(PersonalMemory memory) {
+        return Map.of(
+                "id", memory.id().toString(),
+                "type", memory.type().name(),
+                "content", memory.content(),
+                "strength", memory.strength(),
+                "accessCount", memory.accessCount(),
+                "createdAt", memory.createdAt().toString(),
+                "lastAccessedAt", memory.lastAccessedAt().toString());
+    }
+
+    private static Map<String, Object> sessionView(CognitiveSession session) {
+        return Map.of(
+                "sessionId", session.sessionId().toString(),
+                "tenantId", session.tenantId(),
+                "status", session.status().name(),
+                "turnSummaries", session.turnSummaries(),
+                "emotionalState", session.emotionalState(),
+                "engagementScore", session.engagementScore(),
+                "startedAt", session.startedAt().toString(),
+                "lastActiveAt", session.lastActiveAt().toString());
     }
 
     private static Map<String, Object> toView(ErasureEvent event) {

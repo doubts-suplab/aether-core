@@ -5,7 +5,7 @@
 
 ---
 
-**Active Phase:** Phase 3 — GDPR + Right to Erasure 🔄 (core complete: erasure + audit + multi-jurisdiction retention holds; export & retention purge follow-up)
+**Active Phase:** Phase 3 — GDPR + Right to Erasure 🔄 (core complete: erasure + audit + multi-jurisdiction retention holds + data portability export; retention purge follow-up)
 > Phases 4 and 5 were prioritised ahead of Phase 3 (GDPR) by explicit decision.
 
 | Phase | Name | Status | Sessions |
@@ -13,7 +13,7 @@
 | 0 | Scaffold | ✅ Complete | 1 |
 | 1 | Personal Memory Engine | ✅ Complete | 2 |
 | 2 | Cognitive Session Management | ✅ Complete | 2 |
-| 3 | GDPR + Right to Erasure | 🔄 Core complete (erasure + audit + retention holds) | 5 |
+| 3 | GDPR + Right to Erasure | 🔄 Core complete (erasure + audit + retention holds + export) | 6 |
 | 4 | Grid Feedback Loop (Kafka) | ✅ Complete | 3 |
 | 5 | Memory Decay + Reinforcement Scheduler | ✅ Complete | 3 |
 | 6 | Kubernetes + Helm | ⏳ Planned | — |
@@ -307,6 +307,42 @@ retention mandates, active litigation). This session adds the seam that honours 
 - `mvn -DskipITs verify` passes the JaCoCo 80% gate.
 
 ### Remaining Phase 3 (follow-up)
-- **Memory export** (`GET …/export`, Article 20 portability / CCPA right-to-know).
 - **Requester identity verification** on erasure (CCPA verifiable consumer request).
+- **`data_retention_days`** per user + a retention purge sweep (`user_privacy_settings`, migration V008).
+
+---
+
+## Phase 3 — GDPR + Right to Erasure 🔄 (session 6 — data portability / export)
+
+**Commit:** `feat(core): personal data export (GDPR Art. 20 portability)`
+
+Where erasure proves data was destroyed, **export hands it back**. This session adds the
+data-portability half of Phase 3 — the GDPR Article 20 / CCPA right-to-know read.
+
+### What was done
+
+**Portable, read-only export:**
+- `PersonalDataExport` record (core-domain) — a snapshot of a user's personal memories
+  (active **and** archived), cognitive sessions across **every** tenant, and preferences,
+  with `totalRecords()`, defensive copies, and a `now()`-stamped `of(...)` factory.
+- `PersonalDataExportPort` (core-domain) + `DefaultPersonalDataExportService` (core-memory)
+  composing the three stores, bounded by `MAX_EXPORT = 10_000` per collection.
+- Two **non-reinforcing** read methods added to the stores — `PersonalMemoryStore.findAllByUser`
+  (a `UNION ALL` over active + archive, plain read, **no** `reinforce()`) and
+  `CognitiveSessionStore.findAllByUser` (cross-tenant, most-recently-active first). Export is
+  an administrative read: it never perturbs memory strengths the way recall does.
+- `GET /api/v1/users/{userId}/export` on `DataSubjectController` — returns a portable JSON view
+  (memories, sessions, preferences + `totalRecords`, `exportedAt`).
+
+**Tests — unit suite green (75):**
+- Domain `PersonalDataExportTest` (6): assembly, `totalRecords`, defensive copy, null-collection
+  defaults, blank-user rejection.
+- Engine `DefaultPersonalDataExportServiceTest` (3): composition, `MAX_EXPORT` bound, blank-user.
+- Api `DataSubjectControllerTest` export case; new failsafe IT cases —
+  `findAllByUser` active+archived union + no-reinforcement in `PGVectorPersonalMemoryStoreIT`,
+  cross-tenant + per-user isolation in `JdbcCognitiveSessionStoreIT`.
+- No new migration — export is read-only over existing tables.
+
+### Remaining Phase 3 (follow-up)
+- **Requester identity verification** on erasure/export (CCPA verifiable consumer request).
 - **`data_retention_days`** per user + a retention purge sweep (`user_privacy_settings`, migration V008).

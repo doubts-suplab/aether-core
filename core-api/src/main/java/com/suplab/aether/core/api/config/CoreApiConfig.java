@@ -6,6 +6,7 @@ import com.suplab.aether.core.memory.embedding.PersonalEmbeddingService;
 import com.suplab.aether.core.memory.erasure.DefaultPersonalDataErasureService;
 import com.suplab.aether.core.memory.erasure.JdbcErasureEventStore;
 import com.suplab.aether.core.memory.erasure.JdbcLegalHoldStore;
+import com.suplab.aether.core.memory.export.DefaultPersonalDataExportService;
 import com.suplab.aether.core.memory.preference.JdbcUserPreferenceStore;
 import com.suplab.aether.core.memory.session.JdbcCognitiveSessionStore;
 import com.suplab.aether.core.memory.store.PGVectorPersonalMemoryStore;
@@ -14,6 +15,7 @@ import com.suplab.aether.core.ports.ErasureEventStore;
 import com.suplab.aether.core.ports.LegalHoldStore;
 import com.suplab.aether.core.ports.PersonalContextProvider;
 import com.suplab.aether.core.ports.PersonalDataErasurePort;
+import com.suplab.aether.core.ports.PersonalDataExportPort;
 import com.suplab.aether.core.ports.PersonalMemoryStore;
 import com.suplab.aether.core.ports.UserPreferenceStore;
 import org.springframework.beans.factory.annotation.Value;
@@ -86,6 +88,17 @@ public class CoreApiConfig {
                                                            LegalHoldStore legalHoldStore) {
         return new DefaultPersonalDataErasureService(memoryStore, sessionStore, preferenceStore,
                 erasureEventStore, legalHoldStore);
+    }
+
+    /**
+     * Creates the GDPR data-portability service (Article 20), composing the memory, session, and
+     * preference stores into a read-only export.
+     */
+    @Bean
+    public PersonalDataExportPort personalDataExportPort(PersonalMemoryStore memoryStore,
+                                                         CognitiveSessionStore sessionStore,
+                                                         UserPreferenceStore preferenceStore) {
+        return new DefaultPersonalDataExportService(memoryStore, sessionStore, preferenceStore);
     }
 
     /**

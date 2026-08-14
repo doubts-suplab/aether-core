@@ -80,7 +80,7 @@
 | Legal / statutory **retention holds** — erasure retains held categories, records them in the audit (`heldCategories`) | ✅ |
 | `legal_holds` store + `PUT/DELETE/GET /api/v1/users/{userId}/legal-holds/{category}` | ✅ |
 | V007 migration: `legal_holds` table + `held_categories` column | ✅ |
-| Memory export: `GET /api/v1/users/{userId}/export` (JSON, portability — Art. 20 / CCPA right-to-know) | ⏳ (follow-up) |
+| Memory export: `GET /api/v1/users/{userId}/export` (JSON, portability — Art. 20 / CCPA right-to-know) — read-only, non-reinforcing | ✅ |
 | Requester identity verification on erasure (CCPA verifiable request) | ⏳ (follow-up) |
 | `data_retention_days` per user configurable + retention purge (`user_privacy_settings`, V008) | ⏳ (follow-up) |
 
@@ -146,5 +146,5 @@
 | More decay/reinforcement test coverage | S–M |
 | Clearer feedback loop into Grid | M |
 
-Already tracked (Phase 3 follow-ups): memory export (Art. 20 portability), requester identity
-verification, `data_retention_days` retention purge (V008).
+Already tracked (Phase 3 follow-ups): requester identity verification, `data_retention_days`
+retention purge (V008). Memory export (Art. 20 portability) — ✅ delivered.

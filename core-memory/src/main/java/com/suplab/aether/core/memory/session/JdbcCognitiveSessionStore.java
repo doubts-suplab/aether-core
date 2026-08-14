@@ -145,6 +145,23 @@ public class JdbcCognitiveSessionStore implements CognitiveSessionStore {
         return deleted;
     }
 
+    @Override
+    public List<CognitiveSession> findAllByUser(String userId, int limit) {
+        // Data portability: a person's sessions across every tenant, most recently active first.
+        var sql = """
+                SELECT session_id, user_id, tenant_id, turn_summaries, emotional_state,
+                       engagement_score, status, started_at, last_active_at
+                FROM cognitive_sessions
+                WHERE user_id = :userId
+                ORDER BY last_active_at DESC
+                LIMIT :limit
+                """;
+        var params = new MapSqlParameterSource()
+                .addValue("userId", userId)
+                .addValue("limit", limit);
+        return jdbc.query(sql, params, this::mapRow);
+    }
+
     private CognitiveSession mapRow(ResultSet rs, int row) throws SQLException {
         return new CognitiveSession(
                 UUID.fromString(rs.getString("session_id")),

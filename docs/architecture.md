@@ -59,12 +59,16 @@ com.suplab.aether.core.domain
   ErasureEvent          — record: append-only erasure audit entry (counts + heldCategories, no content)
   DataCategory          — enum: MEMORIES | SESSIONS | PREFERENCES (granularity of a retention hold)
   LegalHold             — record: userId, category, reason, placedBy, placedAt
+  PersonalDataExport    — record: portable read-only snapshot (memories + sessions + preferences),
+                          totalRecords() · of() factory (Article 20 portability)
 
 com.suplab.aether.core.ports
   PersonalMemoryStore     — driven port: save, findSimilar, findByType, delete, countByUser,
-                            deleteAllByUser (erasure)
+                            deleteAllByUser (erasure), findAllByUser (export, non-reinforcing)
   PersonalContextProvider — driven port: buildContext(tenantId, userId)
-  CognitiveSessionStore   — driven port: save, findById, findActive, findByUser, deleteAllByUser
+  PersonalDataExportPort  — driving port: exportAll(userId) → PersonalDataExport (Article 20)
+  CognitiveSessionStore   — driven port: save, findById, findActive, findByUser, deleteAllByUser,
+                            findAllByUser (export, cross-tenant)
   UserPreferenceStore     — driven port: find, save (replace semantics), deleteByUser
   MemoryLifecyclePort     — driven port: runLifecycle() → LifecycleResult
   ErasureEventStore       — driven port: record, findByUser (append-only audit log)
@@ -141,7 +145,8 @@ com.suplab.aether.core.api.controller
                                 PATCH {sessionId}/turns · POST {sessionId}/close
   UserPreferenceController    — GET/PUT /api/v1/users/{userId}/preferences
   DataSubjectController       — right to erasure: DELETE /api/v1/users/{userId}/memories,
-                                DELETE /api/v1/users/{userId}, GET .../erasures (audit history)
+                                DELETE /api/v1/users/{userId}, GET .../erasures (audit history);
+                                data portability: GET .../export (read-only, non-reinforcing)
   LegalHoldController         — retention holds: GET /api/v1/users/{userId}/legal-holds,
                                 PUT/DELETE .../legal-holds/{category}
 
@@ -227,6 +232,8 @@ Append-only audit log for right-to-erasure. Columns: `id`, `user_id`, `scope` (`
 Legal / statutory retention holds that gate erasure. Columns: `id`, `user_id`, `category` (`MEMORIES` | `SESSIONS` | `PREFERENCES`), `reason`, `placed_by`, `placed_at`, with a `UNIQUE (user_id, category)` constraint (one hold per category, `place` upserts). Indexed on `(user_id, placed_at DESC)`.
 
 **Right to erasure (Article 17) with retention holds:** `PersonalDataErasurePort` (`DefaultPersonalDataErasureService`) composes the memory, session, and preference stores plus the `LegalHoldStore`. Before deleting any category it reads `heldCategories(userId)` and **skips every held category**; `eraseMemories` deletes the user's memories (active + archived — embeddings are in-row, so they go with the rows) unless held; `eraseAccount` additionally deletes cognitive sessions (across every tenant) and preferences unless held. The recorded `ErasureEvent` names the retained categories in `heldCategories`, so a partial erasure is auditable rather than silent. This is the seam that makes erasure **multi-jurisdiction**: the delete-on-request + immutable-audit primitive is jurisdiction-neutral, and the retention-hold check uniformly satisfies the statutory exceptions of GDPR Art. 17(3), CCPA §1798.105(d), and sectoral US law (HIPAA/GLBA). Holds are placed and lifted by legal / compliance operators via `LegalHoldController`. Erasure is **Core-local** — Grid reads personal context live, so there is no cross-service propagation to perform. With no holds in place, erasure behaves as an unconditional delete.
+
+**Data portability (Article 20 / CCPA right-to-know):** `PersonalDataExportPort` (`DefaultPersonalDataExportService`) composes the same three stores into a read-only `PersonalDataExport` — the user's personal memories (active **and** archived, via a `UNION ALL` in `PersonalMemoryStore.findAllByUser`), cognitive sessions across **every** tenant (`CognitiveSessionStore.findAllByUser`), and preferences. Served at `GET /api/v1/users/{userId}/export`. Where erasure destroys data, export hands it back. Crucially the export reads are **non-reinforcing**: unlike `findSimilar`/`findByType` (which reinforce on recall), `findAllByUser` is a plain read, so exporting a user's data never perturbs their memory strengths. A single export is bounded by `MAX_EXPORT = 10_000` per collection. No new migration — export is read-only over the existing tables.
 
 ---
 

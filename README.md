@@ -44,6 +44,7 @@ cd ../.. && mvn spring-boot:run -pl core-api
 | `GET` | `/api/v1/users/{userId}/legal-holds` | List active legal / statutory retention holds |
 | `PUT` | `/api/v1/users/{userId}/legal-holds/{category}` | Place a retention hold on a data category (`MEMORIES`/`SESSIONS`/`PREFERENCES`) |
 | `DELETE` | `/api/v1/users/{userId}/legal-holds/{category}` | Lift a retention hold |
+| `GET` | `/api/v1/users/{userId}/export` | **Portability** (Art. 20 / CCPA right-to-know) — portable read-only JSON of memories (active + archived), sessions (all tenants), preferences; non-reinforcing |
 | `GET` | `/actuator/health` | Liveness + readiness probes |
 
 ## Memory Types
