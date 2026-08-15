@@ -269,6 +269,11 @@
         <td>Data portability (Art. 20 / CCPA right-to-know) — portable read-only JSON of all memories, sessions, preferences; non-reinforcing</td>
       </tr>
       <tr>
+        <td><span class="method get">GET</span> <span class="method post">PUT</span></td>
+        <td><code>/api/v1/users/{userId}/privacy-settings</code></td>
+        <td>Retention window (<code>data_retention_days</code>, 0 = keep indefinitely) — drives the scheduled, hold-aware retention purge (Art. 5(1)(e))</td>
+      </tr>
+      <tr>
         <td><span class="method get">GET</span></td>
         <td><code>/actuator/health</code></td>
         <td>Liveness + readiness probes</td>
@@ -307,7 +312,7 @@
     <div class="roadmap-item">
       <div class="dot done"></div>
       <div class="phase-label">Phase 3</div>
-      <div class="phase-name">GDPR + Privacy Controls — right to erasure (memories + full account), append-only audit (V006), multi-jurisdiction legal / statutory retention holds (V007), and data portability export (Art. 20 / CCPA right-to-know, read-only + non-reinforcing); retention purge follow-up</div>
+      <div class="phase-name">GDPR + Privacy Controls — right to erasure (memories + full account), append-only audit (V006), multi-jurisdiction legal / statutory retention holds (V007), data portability export (Art. 20 / CCPA right-to-know), and a scheduled storage-limitation retention purge (Art. 5(1)(e), V008 — per-user window, hold-aware, audited); requester-identity-verification follow-up</div>
       <span class="status-badge done">Core Complete</span>
     </div>
     <div class="roadmap-item">

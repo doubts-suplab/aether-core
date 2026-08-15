@@ -8,6 +8,8 @@ import com.suplab.aether.core.memory.erasure.JdbcErasureEventStore;
 import com.suplab.aether.core.memory.erasure.JdbcLegalHoldStore;
 import com.suplab.aether.core.memory.export.DefaultPersonalDataExportService;
 import com.suplab.aether.core.memory.preference.JdbcUserPreferenceStore;
+import com.suplab.aether.core.memory.retention.DefaultRetentionPurgeService;
+import com.suplab.aether.core.memory.retention.JdbcUserPrivacySettingsStore;
 import com.suplab.aether.core.memory.session.JdbcCognitiveSessionStore;
 import com.suplab.aether.core.memory.store.PGVectorPersonalMemoryStore;
 import com.suplab.aether.core.ports.CognitiveSessionStore;
@@ -17,7 +19,9 @@ import com.suplab.aether.core.ports.PersonalContextProvider;
 import com.suplab.aether.core.ports.PersonalDataErasurePort;
 import com.suplab.aether.core.ports.PersonalDataExportPort;
 import com.suplab.aether.core.ports.PersonalMemoryStore;
+import com.suplab.aether.core.ports.RetentionPurgePort;
 import com.suplab.aether.core.ports.UserPreferenceStore;
+import com.suplab.aether.core.ports.UserPrivacySettingsStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -99,6 +103,29 @@ public class CoreApiConfig {
                                                          CognitiveSessionStore sessionStore,
                                                          UserPreferenceStore preferenceStore) {
         return new DefaultPersonalDataExportService(memoryStore, sessionStore, preferenceStore);
+    }
+
+    /**
+     * Creates the per-user privacy-settings store ({@code user_privacy_settings} table) — the retention
+     * window the purge sweep reads.
+     */
+    @Bean
+    public UserPrivacySettingsStore userPrivacySettingsStore(NamedParameterJdbcTemplate jdbc) {
+        return new JdbcUserPrivacySettingsStore(jdbc);
+    }
+
+    /**
+     * Creates the retention-purge service (GDPR storage-limitation, Art. 5(1)(e)): deletes memories and
+     * sessions past each user's retention window, honouring legal holds and auditing each purge.
+     */
+    @Bean
+    public RetentionPurgePort retentionPurgePort(PersonalMemoryStore memoryStore,
+                                                 CognitiveSessionStore sessionStore,
+                                                 UserPrivacySettingsStore settingsStore,
+                                                 LegalHoldStore legalHoldStore,
+                                                 ErasureEventStore erasureEventStore) {
+        return new DefaultRetentionPurgeService(memoryStore, sessionStore, settingsStore,
+                legalHoldStore, erasureEventStore);
     }
 
     /**

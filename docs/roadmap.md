@@ -82,7 +82,7 @@
 | V007 migration: `legal_holds` table + `held_categories` column | ✅ |
 | Memory export: `GET /api/v1/users/{userId}/export` (JSON, portability — Art. 20 / CCPA right-to-know) — read-only, non-reinforcing | ✅ |
 | Requester identity verification on erasure (CCPA verifiable request) | ⏳ (follow-up) |
-| `data_retention_days` per user configurable + retention purge (`user_privacy_settings`, V008) | ⏳ (follow-up) |
+| `data_retention_days` per user configurable + scheduled retention purge (`user_privacy_settings`, V008) — hold-aware, audited (RETENTION scope) | ✅ |
 
 ---
 
@@ -146,5 +146,5 @@
 | More decay/reinforcement test coverage | S–M |
 | Clearer feedback loop into Grid | M |
 
-Already tracked (Phase 3 follow-ups): requester identity verification, `data_retention_days`
-retention purge (V008). Memory export (Art. 20 portability) — ✅ delivered.
+Already tracked (Phase 3 follow-ups): requester identity verification (remaining). Memory export
+(Art. 20 portability) and `data_retention_days` retention purge (V008) — ✅ delivered.

@@ -98,6 +98,30 @@ class PGVectorPersonalMemoryStoreIT {
     }
 
     @Test
+    void deleteOlderThan_purgesAgedActiveAndArchivedKeepsRecent() {
+        var userId = "user-" + UUID.randomUUID();
+        var now = java.time.Instant.now();
+        var old = new PersonalMemory(UUID.randomUUID(), userId, MemoryType.EPISODIC, "old memory",
+                0.5, 0, now.minus(java.time.Duration.ofDays(100)), now.minus(java.time.Duration.ofDays(100)));
+        store.save(old, new float[384]);
+        store.save(PersonalMemory.create(userId, MemoryType.SEMANTIC, "recent memory"), new float[384]);
+        // an aged archived row
+        jdbc.update("""
+                INSERT INTO personal_memories_archive
+                    (id, user_id, memory_type, content, strength, access_count,
+                     created_at, last_accessed_at, archived_at)
+                VALUES (gen_random_uuid(), :userId, 'SEMANTIC', 'old archived', 0.05, 3,
+                        NOW() - INTERVAL '100 days', NOW() - INTERVAL '100 days', NOW())
+                """, new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("userId", userId));
+
+        int purged = store.deleteOlderThan(userId, now.minus(java.time.Duration.ofDays(30)));
+
+        assertThat(purged).isEqualTo(2); // old active + old archived; recent kept
+        assertThat(store.findAllByUser(userId, 100)).extracting(PersonalMemory::content)
+                .containsExactly("recent memory");
+    }
+
+    @Test
     void findAllByUser_isolatesPerUser() {
         var userA = "user-" + UUID.randomUUID();
         var userB = "user-" + UUID.randomUUID();
