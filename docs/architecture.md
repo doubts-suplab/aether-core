@@ -55,25 +55,29 @@ com.suplab.aether.core.domain
   PersonalContext       — record: assembled snapshot served to Grid
   AgentDecisionFeedback — record: Grid decision feedback from Kafka
   DecisionOutcome       — enum: CORRECT | INCORRECT | OVERRIDDEN
-  ErasureScope          — enum: MEMORIES | ACCOUNT
+  ErasureScope          — enum: MEMORIES | ACCOUNT | RETENTION (system-initiated storage-limitation purge)
   ErasureEvent          — record: append-only erasure audit entry (counts + heldCategories, no content)
   DataCategory          — enum: MEMORIES | SESSIONS | PREFERENCES (granularity of a retention hold)
   LegalHold             — record: userId, category, reason, placedBy, placedAt
   PersonalDataExport    — record: portable read-only snapshot (memories + sessions + preferences),
                           totalRecords() · of() factory (Article 20 portability)
+  UserPrivacySettings   — record: userId, dataRetentionDays (0 = keep indefinitely), updatedAt
+  RetentionPurgeResult  — record: usersPurged, memoriesPurged, sessionsPurged (single purge or sweep)
 
 com.suplab.aether.core.ports
   PersonalMemoryStore     — driven port: save, findSimilar, findByType, delete, countByUser,
-                            deleteAllByUser (erasure), findAllByUser (export, non-reinforcing)
+                            deleteAllByUser (erasure), deleteOlderThan (retention purge), findAllByUser (export)
   PersonalContextProvider — driven port: buildContext(tenantId, userId)
   PersonalDataExportPort  — driving port: exportAll(userId) → PersonalDataExport (Article 20)
   CognitiveSessionStore   — driven port: save, findById, findActive, findByUser, deleteAllByUser,
-                            findAllByUser (export, cross-tenant)
+                            deleteOlderThan (retention purge), findAllByUser (export, cross-tenant)
   UserPreferenceStore     — driven port: find, save (replace semantics), deleteByUser
+  UserPrivacySettingsStore— driven port: find, save (upsert), findAllWithRetention (purge working set)
   MemoryLifecyclePort     — driven port: runLifecycle() → LifecycleResult
   ErasureEventStore       — driven port: record, findByUser (append-only audit log)
   LegalHoldStore          — driven port: place, lift, heldCategories, findByUser
   PersonalDataErasurePort — driving port: eraseMemories, eraseAccount (hold-aware)
+  RetentionPurgePort      — driving port: purgeUser, purgeAll (age-based, hold-aware, audited RETENTION)
 ```
 
 ### `core-memory` — Persistence Adapters
@@ -149,6 +153,8 @@ com.suplab.aether.core.api.controller
                                 data portability: GET .../export (read-only, non-reinforcing)
   LegalHoldController         — retention holds: GET /api/v1/users/{userId}/legal-holds,
                                 PUT/DELETE .../legal-holds/{category}
+  UserPrivacySettingsController — retention window: GET/PUT /api/v1/users/{userId}/privacy-settings
+  RetentionPurgeScheduler     — @Scheduled storage-limitation purge (RetentionPurgePort.purgeAll)
 
 com.suplab.aether.core.api.feedback
   GridFeedbackListener  — @KafkaListener on aether.core.feedback (opt-in)
@@ -234,6 +240,12 @@ Legal / statutory retention holds that gate erasure. Columns: `id`, `user_id`, `
 **Right to erasure (Article 17) with retention holds:** `PersonalDataErasurePort` (`DefaultPersonalDataErasureService`) composes the memory, session, and preference stores plus the `LegalHoldStore`. Before deleting any category it reads `heldCategories(userId)` and **skips every held category**; `eraseMemories` deletes the user's memories (active + archived — embeddings are in-row, so they go with the rows) unless held; `eraseAccount` additionally deletes cognitive sessions (across every tenant) and preferences unless held. The recorded `ErasureEvent` names the retained categories in `heldCategories`, so a partial erasure is auditable rather than silent. This is the seam that makes erasure **multi-jurisdiction**: the delete-on-request + immutable-audit primitive is jurisdiction-neutral, and the retention-hold check uniformly satisfies the statutory exceptions of GDPR Art. 17(3), CCPA §1798.105(d), and sectoral US law (HIPAA/GLBA). Holds are placed and lifted by legal / compliance operators via `LegalHoldController`. Erasure is **Core-local** — Grid reads personal context live, so there is no cross-service propagation to perform. With no holds in place, erasure behaves as an unconditional delete.
 
 **Data portability (Article 20 / CCPA right-to-know):** `PersonalDataExportPort` (`DefaultPersonalDataExportService`) composes the same three stores into a read-only `PersonalDataExport` — the user's personal memories (active **and** archived, via a `UNION ALL` in `PersonalMemoryStore.findAllByUser`), cognitive sessions across **every** tenant (`CognitiveSessionStore.findAllByUser`), and preferences. Served at `GET /api/v1/users/{userId}/export`. Where erasure destroys data, export hands it back. Crucially the export reads are **non-reinforcing**: unlike `findSimilar`/`findByType` (which reinforce on recall), `findAllByUser` is a plain read, so exporting a user's data never perturbs their memory strengths. A single export is bounded by `MAX_EXPORT = 10_000` per collection. No new migration — export is read-only over the existing tables.
+
+### `user_privacy_settings` table (V008)
+
+Per-user retention configuration. Columns: `user_id` (PK), `data_retention_days` (INT, `CHECK >= 0`, `0` = keep indefinitely), `updated_at`. A partial index on `data_retention_days > 0` is the purge sweep's working set. V008 also relaxes the `erasure_events` `scope` CHECK to admit `RETENTION`.
+
+**Retention purge (Article 5(1)(e) storage limitation):** `RetentionPurgePort` (`DefaultRetentionPurgeService`) composes the memory and session stores, the `UserPrivacySettingsStore`, the `LegalHoldStore`, and the `ErasureEventStore`. For a user with `data_retention_days > 0` it computes `cutoff = now − days` and calls `PersonalMemoryStore.deleteOlderThan` (active + archive) and `CognitiveSessionStore.deleteOlderThan` (cross-tenant) — **skipping any category under a legal hold**, exactly as on-request erasure does — then records a `RETENTION`-scope `ErasureEvent` (`requestedBy = retention-policy`) in the same audit log, so an automated purge is as accountable as a manual erasure. Preferences (current config, not history) are out of scope; a user with no window (or `0`) is a no-op. `RetentionPurgeScheduler` (`@Scheduled`, default 02:30, opt-out via `aether.core.retention.purge-enabled`) runs `purgeAll()` and publishes `aether.core.retention.{memories,sessions}-purged` counters. Where erasure is the user's *right to be forgotten*, retention purge is the controller's *duty not to over-retain*.
 
 ---
 

@@ -3,6 +3,7 @@ package com.suplab.aether.core.ports;
 import com.suplab.aether.core.domain.MemoryType;
 import com.suplab.aether.core.domain.PersonalMemory;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -69,6 +70,17 @@ public interface PersonalMemoryStore {
      * @return non-negative memory count
      */
     long countByUser(String userId);
+
+    /**
+     * Hard-deletes a user's personal memories — both active and archived — that were created strictly
+     * before {@code cutoff}, for the retention purge (GDPR storage-limitation, Art. 5(1)(e)). Embeddings
+     * live in-row, so they go with the rows. Newer memories are retained.
+     *
+     * @param userId the user whose aged-out memories to purge
+     * @param cutoff memories with {@code created_at < cutoff} are deleted
+     * @return the number of memory rows deleted (active + archived)
+     */
+    int deleteOlderThan(String userId, Instant cutoff);
 
     /**
      * Returns <strong>all</strong> of a user's personal memories — both active and archived — as a

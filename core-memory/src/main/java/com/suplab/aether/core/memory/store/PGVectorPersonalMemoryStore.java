@@ -160,6 +160,23 @@ public class PGVectorPersonalMemoryStore implements PersonalMemoryStore {
     }
 
     @Override
+    public int deleteOlderThan(String userId, java.time.Instant cutoff) {
+        // Retention purge (GDPR storage limitation): delete a user's memories older than the cutoff in
+        // both the active and archive tables. Embeddings live in-row, so they are erased with the rows.
+        var params = new MapSqlParameterSource()
+                .addValue("userId", userId)
+                .addValue("cutoff", Timestamp.from(cutoff));
+        int active = jdbc.update(
+                "DELETE FROM personal_memories WHERE user_id = :userId AND created_at < :cutoff", params);
+        int archived = jdbc.update(
+                "DELETE FROM personal_memories_archive WHERE user_id = :userId AND created_at < :cutoff", params);
+        int total = active + archived;
+        log.info("Retention-purged {} personal memory row(s) for userId={} older than {} (active={}, archived={})",
+                total, userId, cutoff, active, archived);
+        return total;
+    }
+
+    @Override
     public long countByUser(String userId) {
         var sql = "SELECT COUNT(*) FROM personal_memories WHERE user_id = :userId";
         Long count = jdbc.queryForObject(sql, new MapSqlParameterSource("userId", userId), Long.class);

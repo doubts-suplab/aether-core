@@ -26,6 +26,7 @@ class DefaultPersonalDataExportServiceTest {
         @Override public void delete(UUID id, String u) { }
         @Override public long countByUser(String u) { return 0; }
         @Override public int deleteAllByUser(String userId) { return 0; }
+        @Override public int deleteOlderThan(String u, java.time.Instant c) { return 0; }
         @Override public List<PersonalMemory> findAllByUser(String u, int l) {
             lastLimit = l;
             return List.of(PersonalMemory.create(u, MemoryType.SEMANTIC, "fact one"),
@@ -39,6 +40,7 @@ class DefaultPersonalDataExportServiceTest {
         @Override public Optional<CognitiveSession> findActive(String t, String u) { return Optional.empty(); }
         @Override public List<CognitiveSession> findByUser(String t, String u, int l) { return List.of(); }
         @Override public int deleteAllByUser(String userId) { return 0; }
+        @Override public int deleteOlderThan(String u, java.time.Instant c) { return 0; }
         @Override public List<CognitiveSession> findAllByUser(String u, int l) {
             return List.of(CognitiveSession.start("t-1", u));
         }

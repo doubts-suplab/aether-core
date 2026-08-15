@@ -5,7 +5,7 @@
 
 ---
 
-**Active Phase:** Phase 3 — GDPR + Right to Erasure 🔄 (core complete: erasure + audit + multi-jurisdiction retention holds + data portability export; retention purge follow-up)
+**Active Phase:** Phase 3 — GDPR + Right to Erasure 🔄 (core complete: erasure + audit + multi-jurisdiction retention holds + data portability export + storage-limitation retention purge; requester-identity-verification follow-up)
 > Phases 4 and 5 were prioritised ahead of Phase 3 (GDPR) by explicit decision.
 
 | Phase | Name | Status | Sessions |
@@ -308,7 +308,7 @@ retention mandates, active litigation). This session adds the seam that honours 
 
 ### Remaining Phase 3 (follow-up)
 - **Requester identity verification** on erasure (CCPA verifiable consumer request).
-- **`data_retention_days`** per user + a retention purge sweep (`user_privacy_settings`, migration V008).
+- **`data_retention_days`** per user + a retention purge sweep — ✅ delivered in session 7 below.
 
 ---
 
@@ -343,6 +343,41 @@ data-portability half of Phase 3 — the GDPR Article 20 / CCPA right-to-know re
   cross-tenant + per-user isolation in `JdbcCognitiveSessionStoreIT`.
 - No new migration — export is read-only over existing tables.
 
+---
+
+## Phase 3 — GDPR + Right to Erasure 🔄 (session 7 — storage-limitation retention purge)
+
+**Commit:** `feat(core): scheduled retention purge (GDPR storage limitation, V008)`
+
+Erasure deletes on request; export hands data back. This session adds the **automated** half of the
+privacy story — GDPR storage limitation (Art. 5(1)(e)): data that has outlived its usefulness is
+deleted on a schedule, not left to accumulate.
+
+### What was done
+
+**Per-user retention window + hold-aware purge:**
+- `UserPrivacySettings` record (core-domain) — `data_retention_days` (`0` = keep indefinitely) +
+  `hasRetentionLimit()`; `UserPrivacySettingsStore` port + `JdbcUserPrivacySettingsStore` (upsert).
+- Age-based `deleteOlderThan(userId, cutoff)` added to `PersonalMemoryStore` (active + archive) and
+  `CognitiveSessionStore` (cross-tenant) — newer records are kept.
+- `RetentionPurgePort` + `DefaultRetentionPurgeService`: for each user with a window, delete memories
+  and sessions older than `now − days`, **skipping any category under a legal hold** exactly as
+  on-request erasure does, and recording a new **`ErasureScope.RETENTION`** `ErasureEvent`
+  (`requestedBy = retention-policy`) — the same audit log, so a purge is as accountable as an erasure.
+  Preferences (current config, not history) are out of scope.
+- `RetentionPurgeScheduler` (`@Scheduled`, default 02:30, opt-out via `aether.core.retention.purge-enabled`)
+  + Micrometer counters `aether.core.retention.{memories,sessions}-purged`.
+- `GET/PUT /api/v1/users/{userId}/privacy-settings` to read/set the window.
+- **Migration V008** — `user_privacy_settings` table + relaxes the `erasure_events` scope CHECK to
+  admit `RETENTION` (api + core-memory test + core-infra copies).
+
+**Tests — 89 unit tests green (was 75):**
+- Domain `UserPrivacySettingsTest` (5); engine `DefaultRetentionPurgeServiceTest` (6): age-based purge +
+  audit, hold-skip, no-op when no window / zero window, sweep aggregation, no audit noise on an empty
+  pass; api `UserPrivacySettingsControllerTest` (3).
+- New failsafe ITs: `deleteOlderThan` age cases in `PGVectorPersonalMemoryStoreIT` +
+  `JdbcCognitiveSessionStoreIT`, and `JdbcUserPrivacySettingsStoreIT`.
+- `mvn -DskipITs verify` passes the JaCoCo 80% gate.
+
 ### Remaining Phase 3 (follow-up)
 - **Requester identity verification** on erasure/export (CCPA verifiable consumer request).
-- **`data_retention_days`** per user + a retention purge sweep (`user_privacy_settings`, migration V008).

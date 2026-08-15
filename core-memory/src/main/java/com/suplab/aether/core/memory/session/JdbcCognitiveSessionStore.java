@@ -146,6 +146,19 @@ public class JdbcCognitiveSessionStore implements CognitiveSessionStore {
     }
 
     @Override
+    public int deleteOlderThan(String userId, java.time.Instant cutoff) {
+        // Retention purge: delete a user's sessions (across every tenant) last active before the cutoff.
+        var params = new MapSqlParameterSource()
+                .addValue("userId", userId)
+                .addValue("cutoff", Timestamp.from(cutoff));
+        int deleted = jdbc.update(
+                "DELETE FROM cognitive_sessions WHERE user_id = :userId AND last_active_at < :cutoff", params);
+        log.info("Retention-purged {} cognitive session row(s) for userId={} older than {}",
+                deleted, userId, cutoff);
+        return deleted;
+    }
+
+    @Override
     public List<CognitiveSession> findAllByUser(String userId, int limit) {
         // Data portability: a person's sessions across every tenant, most recently active first.
         var sql = """

@@ -151,6 +151,24 @@ class JdbcCognitiveSessionStoreIT {
     }
 
     @Test
+    void deleteOlderThan_purgesAgedSessionsAcrossTenantsKeepsRecent() {
+        var userId = "user-" + UUID.randomUUID();
+        var now = java.time.Instant.now();
+        // an aged, closed session (closed so save() doesn't run active-close logic)
+        var old = new CognitiveSession(UUID.randomUUID(), userId, "acme", java.util.List.of(),
+                "NEUTRAL", 0.5, SessionStatus.CLOSED,
+                now.minus(java.time.Duration.ofDays(100)), now.minus(java.time.Duration.ofDays(100)));
+        store.save(old);
+        store.save(CognitiveSession.start("globex", userId)); // recent, active
+
+        int purged = store.deleteOlderThan(userId, now.minus(java.time.Duration.ofDays(30)));
+
+        assertThat(purged).isEqualTo(1); // only the aged one
+        assertThat(store.findAllByUser(userId, 100)).hasSize(1);
+        assertThat(store.findAllByUser(userId, 100).getFirst().tenantId()).isEqualTo("globex");
+    }
+
+    @Test
     void findAllByUser_returnsSessionsAcrossEveryTenant() {
         var userId = "user-" + UUID.randomUUID();
         store.save(CognitiveSession.start("acme", userId));

@@ -36,6 +36,7 @@ class DefaultPersonalDataErasureServiceTest {
         @Override public void delete(UUID id, String u) { }
         @Override public long countByUser(String u) { return 0; }
         @Override public int deleteAllByUser(String userId) { deleteCalled = true; return deleteReturn; }
+        @Override public int deleteOlderThan(String u, java.time.Instant c) { return 0; }
         @Override public List<PersonalMemory> findAllByUser(String u, int l) { return List.of(); }
     }
 
@@ -47,6 +48,7 @@ class DefaultPersonalDataErasureServiceTest {
         @Override public Optional<CognitiveSession> findActive(String t, String u) { return Optional.empty(); }
         @Override public List<CognitiveSession> findByUser(String t, String u, int l) { return List.of(); }
         @Override public int deleteAllByUser(String userId) { deleteCalled = true; return deleteReturn; }
+        @Override public int deleteOlderThan(String u, java.time.Instant c) { return 0; }
         @Override public List<CognitiveSession> findAllByUser(String u, int l) { return List.of(); }
     }
 

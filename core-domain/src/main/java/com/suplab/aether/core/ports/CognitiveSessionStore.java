@@ -2,6 +2,7 @@ package com.suplab.aether.core.ports;
 
 import com.suplab.aether.core.domain.CognitiveSession;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -44,6 +45,17 @@ public interface CognitiveSessionStore {
      * @return the number of session rows deleted
      */
     int deleteAllByUser(String userId);
+
+    /**
+     * Hard-deletes a user's cognitive sessions — across every tenant — whose last activity is strictly
+     * before {@code cutoff}, for the retention purge (GDPR storage-limitation, Art. 5(1)(e)). More
+     * recently active sessions are retained.
+     *
+     * @param userId the user whose aged-out sessions to purge
+     * @param cutoff sessions with {@code last_active_at < cutoff} are deleted
+     * @return the number of session rows deleted
+     */
+    int deleteOlderThan(String userId, Instant cutoff);
 
     /**
      * Returns <strong>all</strong> of a user's cognitive sessions across every tenant, for data
