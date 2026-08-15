@@ -51,3 +51,7 @@
 ## ADR-013: Archive via data-modifying CTE, never DELETE-only
 **Decision:** Faded memories are moved to `personal_memories_archive` with a single `WITH moved AS (DELETE … RETURNING …) INSERT …` statement.
 **Rationale:** Atomicity without a transaction manager dependency — a memory can never be deleted without landing in the archive. Forgetting is graceful and reversible; embeddings are retained for potential restore.
+
+## ADR-014: Adopted under eeik governance via a canonical `project-manifest.yaml`
+**Decision:** Aether Core carries a canonical `project-manifest.yaml` (`schema_version 1.0`) that validates against eeik's `manifest.schema.json` (schema + governance rules pass). It declares the local-first / Ollama / enterprise-governance posture honestly (`cloud.provider: local-first`, `ai.foundation_model: ollama`, `governance.profile: enterprise`, `delivery.methodology: incremental`) — enabled by the eeik schema extension in ADR-013 of eeik-bootstrap.
+**Rationale:** Brings Core under eeik's manifest-level governance (the precondition for `eeik lock`/`diff`/`verify`) without disturbing its curated `.claude/agents`. Engine-driven activation/lock/verify against an *external* repo is deferred: eeik's `activate`/`lock`/`doctor` are currently bound to the eeik-bootstrap repo root, so in-place adoption of a sibling repo awaits a project-root-aware engine (tracked as an eeik follow-up). Until then, adoption is manifest + validation only — non-destructive and reversible.
