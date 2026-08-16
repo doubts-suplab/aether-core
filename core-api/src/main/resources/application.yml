@@ -50,3 +50,9 @@ aether:
     retention:
       purge-enabled: ${RETENTION_PURGE_ENABLED:true}
       purge-cron: ${RETENTION_PURGE_CRON:0 30 2 * * *}
+    data-subject:
+      # GDPR Art. 12(6) requester-identity gate on erasure + export. Off by default so Core runs open
+      # standalone; when true, a valid X-Subject-Verification token is required (fail-closed: needs a
+      # non-blank secret). The secret is shared with the trusted front door that mints tokens.
+      require-verification: ${DATA_SUBJECT_REQUIRE_VERIFICATION:false}
+      verification-secret: ${DATA_SUBJECT_VERIFICATION_SECRET:}

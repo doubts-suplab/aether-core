@@ -5,7 +5,7 @@
 
 ---
 
-**Active Phase:** Phase 3 — GDPR + Right to Erasure 🔄 (core complete: erasure + audit + multi-jurisdiction retention holds + data portability export + storage-limitation retention purge; requester-identity-verification follow-up)
+**Active Phase:** Phase 3 — GDPR + Right to Erasure ✅ core complete (erasure + audit + multi-jurisdiction retention holds + data portability export + storage-limitation retention purge + requester-identity verification)
 > Phases 4 and 5 were prioritised ahead of Phase 3 (GDPR) by explicit decision.
 
 | Phase | Name | Status | Sessions |
@@ -13,7 +13,7 @@
 | 0 | Scaffold | ✅ Complete | 1 |
 | 1 | Personal Memory Engine | ✅ Complete | 2 |
 | 2 | Cognitive Session Management | ✅ Complete | 2 |
-| 3 | GDPR + Right to Erasure | 🔄 Core complete (erasure + audit + retention holds + export) | 6 |
+| 3 | GDPR + Right to Erasure | ✅ Core complete (erasure + audit + holds + export + retention purge + identity verification) | 8 |
 | 4 | Grid Feedback Loop (Kafka) | ✅ Complete | 3 |
 | 5 | Memory Decay + Reinforcement Scheduler | ✅ Complete | 3 |
 | 6 | Kubernetes + Helm | ⏳ Planned | — |
@@ -307,8 +307,46 @@ retention mandates, active litigation). This session adds the seam that honours 
 - `mvn -DskipITs verify` passes the JaCoCo 80% gate.
 
 ### Remaining Phase 3 (follow-up)
-- **Requester identity verification** on erasure (CCPA verifiable consumer request).
+- **Requester identity verification** on erasure — ✅ delivered in session 8 above.
 - **`data_retention_days`** per user + a retention purge sweep — ✅ delivered in session 7 below.
+
+---
+
+## Phase 3 — GDPR + Right to Erasure ✅ (session 8 — requester identity verification)
+
+**Commit:** `feat(core): requester identity verification on erasure + export (GDPR Art. 12(6))`
+
+Erasure and export trusted the caller. GDPR Article 12(6) lets a controller demand proof of identity
+before acting on a data-subject request; this session adds that gate — config-gated and fail-closed so
+Core still runs open standalone.
+
+### What was done
+
+**Signed, time-boxed verification token (domain):**
+- `SubjectVerificationToken` (core-domain) — a pure HMAC-SHA256 utility: `mint(userId, secret,
+  expiresAt)` → `<expiryEpoch>.<base64url(HMAC(secret, userId + ":" + expiry))>`, and
+  `verify(userId, token, secret, now)` (constant-time compare, expiry-aware). A token minted for one
+  user never validates for another; a tampered or expired token is rejected, never throws.
+
+**Config-gated verifier + gate (api):**
+- `DataSubjectVerifier` (core-api) — off by default (`aether.core.data-subject.require-verification`);
+  when enabled a request must carry a valid `X-Subject-Verification` token bound to the target user or
+  the endpoint returns `401`. Fail-closed: enabling it with a blank
+  `aether.core.data-subject.verification-secret` fails bean construction. Injected `Clock` for testable
+  expiry.
+- `DataSubjectController` now gates **erase memories**, **full-account erase**, and **export** on the
+  verifier; the read-only **erasure history** is never gated. A rejected request touches no data and
+  reveals nothing about the user.
+- Core does not mint tokens to the public — a trusted front door that has actually verified the subject
+  (email/OTP) signs them with the shared secret, mirroring Memory's federation bearer-token seam. No
+  migration — verification is a request-time concern.
+
+**Tests — 71 unit tests green (was 65):**
+- `SubjectVerificationTokenTest` (7): round-trip, wrong-user, expiry boundary, wrong-secret, tamper,
+  malformed-not-thrown, blank-input rejection. `DataSubjectVerifierTest` (4): disabled-allows,
+  fail-closed construction, valid-token-only, clock-based expiry. `DataSubjectControllerTest` (+4):
+  401 on missing/bad/other-user token with data untouched, 200 on valid token, history never gated.
+- `mvn -DskipITs verify` passes the JaCoCo 80% gate.
 
 ---
 
@@ -380,4 +418,4 @@ deleted on a schedule, not left to accumulate.
 - `mvn -DskipITs verify` passes the JaCoCo 80% gate.
 
 ### Remaining Phase 3 (follow-up)
-- **Requester identity verification** on erasure/export (CCPA verifiable consumer request).
+- **Requester identity verification** on erasure/export — ✅ delivered (session 8, GDPR Art. 12(6)).
