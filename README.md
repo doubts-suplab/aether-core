@@ -38,13 +38,13 @@ cd ../.. && mvn spring-boot:run -pl core-api
 | `PATCH` | `/api/v1/tenants/{tenantId}/users/{userId}/sessions/{sessionId}/turns` | Append a turn to a session |
 | `POST` | `/api/v1/tenants/{tenantId}/users/{userId}/sessions/{sessionId}/close` | Close a session |
 | `GET`/`PUT` | `/api/v1/users/{userId}/preferences` | Read / replace user preferences |
-| `DELETE` | `/api/v1/users/{userId}/memories` | **Erasure** — erase all memories (active + archived); retains categories under legal hold |
-| `DELETE` | `/api/v1/users/{userId}` | **Erasure** — full account (memories + sessions + preferences); retains categories under legal hold |
+| `DELETE` | `/api/v1/users/{userId}/memories` | **Erasure** — erase all memories (active + archived); retains categories under legal hold; identity-verified when enabled |
+| `DELETE` | `/api/v1/users/{userId}` | **Erasure** — full account (memories + sessions + preferences); retains categories under legal hold; identity-verified when enabled |
 | `GET` | `/api/v1/users/{userId}/erasures` | Erasure audit history (append-only, records any `heldCategories`) |
 | `GET` | `/api/v1/users/{userId}/legal-holds` | List active legal / statutory retention holds |
 | `PUT` | `/api/v1/users/{userId}/legal-holds/{category}` | Place a retention hold on a data category (`MEMORIES`/`SESSIONS`/`PREFERENCES`) |
 | `DELETE` | `/api/v1/users/{userId}/legal-holds/{category}` | Lift a retention hold |
-| `GET` | `/api/v1/users/{userId}/export` | **Portability** (Art. 20 / CCPA right-to-know) — portable read-only JSON of memories (active + archived), sessions (all tenants), preferences; non-reinforcing |
+| `GET` | `/api/v1/users/{userId}/export` | **Portability** (Art. 20 / CCPA right-to-know) — portable read-only JSON of memories (active + archived), sessions (all tenants), preferences; non-reinforcing; identity-verified when enabled |
 | `GET`/`PUT` | `/api/v1/users/{userId}/privacy-settings` | **Retention window** (`data_retention_days`, `0` = keep indefinitely) — drives the scheduled, hold-aware retention purge (GDPR storage limitation, Art. 5(1)(e)) |
 | `GET` | `/actuator/health` | Liveness + readiness probes |
 
@@ -80,4 +80,6 @@ See [suplab/aether-grid](https://github.com/suplab/aether-grid) for the enterpri
 | `POSTGRES_PASSWORD` | `aether` | DB password |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama embedding endpoint |
 | `EMBEDDING_MODEL` | `all-minilm` | Embedding model name |
+| `DATA_SUBJECT_REQUIRE_VERIFICATION` | `false` | Require a verified-identity token on erasure + export (GDPR Art. 12(6); fail-closed — needs a secret) |
+| `DATA_SUBJECT_VERIFICATION_SECRET` | _(empty)_ | Shared HMAC secret the trusted front door signs `X-Subject-Verification` tokens with |
 | `SERVER_PORT` | `8082` | HTTP port |

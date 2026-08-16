@@ -1,6 +1,7 @@
 package com.suplab.aether.core.api.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.suplab.aether.core.api.security.DataSubjectVerifier;
 import com.suplab.aether.core.memory.context.DefaultPersonalContextProvider;
 import com.suplab.aether.core.memory.embedding.PersonalEmbeddingService;
 import com.suplab.aether.core.memory.erasure.DefaultPersonalDataErasureService;
@@ -27,6 +28,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+
+import java.time.Clock;
 
 /**
  * Spring configuration for Aether Core API beans.
@@ -103,6 +106,22 @@ public class CoreApiConfig {
                                                          CognitiveSessionStore sessionStore,
                                                          UserPreferenceStore preferenceStore) {
         return new DefaultPersonalDataExportService(memoryStore, sessionStore, preferenceStore);
+    }
+
+    /**
+     * Creates the data-subject identity verifier (GDPR Art. 12(6)) gating erasure + export. Off by
+     * default so Core runs open standalone; when {@code aether.core.data-subject.require-verification}
+     * is true a valid {@code X-Subject-Verification} token bound to the target user is required, and a
+     * blank signing secret fails construction (fail-closed).
+     *
+     * @param requireVerification whether sensitive data-subject requests must present a valid token
+     * @param secret              the shared signing secret (env-sourced; required when enabled)
+     */
+    @Bean
+    public DataSubjectVerifier dataSubjectVerifier(
+            @Value("${aether.core.data-subject.require-verification:false}") boolean requireVerification,
+            @Value("${aether.core.data-subject.verification-secret:}") String secret) {
+        return new DataSubjectVerifier(requireVerification, secret, Clock.systemUTC());
     }
 
     /**

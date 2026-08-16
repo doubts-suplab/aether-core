@@ -1,5 +1,6 @@
 package com.suplab.aether.core.api.controller;
 
+import com.suplab.aether.core.api.security.DataSubjectVerifier;
 import com.suplab.aether.core.domain.CognitiveSession;
 import com.suplab.aether.core.domain.ErasureEvent;
 import com.suplab.aether.core.domain.PersonalDataExport;
@@ -9,10 +10,12 @@ import com.suplab.aether.core.ports.PersonalDataErasurePort;
 import com.suplab.aether.core.ports.PersonalDataExportPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,6 +34,12 @@ import java.util.Map;
  * {@link LegalHoldController}) is retained rather than deleted and is reported in the event's
  * {@code heldCategories}, so a partial erasure is auditable rather than silent. Export is a read-only
  * portable snapshot of everything Core holds for the user — it never reinforces or mutates the data.</p>
+ *
+ * <p><strong>Requester identity (GDPR Art. 12(6)).</strong> The destructive erasures and the full
+ * export are gated by a {@link DataSubjectVerifier}: when verification is enabled, a request must carry
+ * a valid {@code X-Subject-Verification} token bound to the target {@code userId} or the endpoint
+ * returns {@code 401}. Verification is off by default, so Core still runs open standalone; the
+ * read-only erasure history is never gated.</p>
  */
 @RestController
 @RequestMapping("/api/v1/users/{userId}")
@@ -38,16 +47,22 @@ public class DataSubjectController {
 
     private static final Logger log = LoggerFactory.getLogger(DataSubjectController.class);
 
+    /** Header carrying the signed proof-of-identity token when verification is enabled. */
+    public static final String VERIFICATION_HEADER = "X-Subject-Verification";
+
     private final PersonalDataErasurePort erasurePort;
     private final ErasureEventStore erasureEventStore;
     private final PersonalDataExportPort exportPort;
+    private final DataSubjectVerifier verifier;
 
     public DataSubjectController(PersonalDataErasurePort erasurePort,
                                 ErasureEventStore erasureEventStore,
-                                PersonalDataExportPort exportPort) {
+                                PersonalDataExportPort exportPort,
+                                DataSubjectVerifier verifier) {
         this.erasurePort = erasurePort;
         this.erasureEventStore = erasureEventStore;
         this.exportPort = exportPort;
+        this.verifier = verifier;
     }
 
     /**
@@ -59,7 +74,9 @@ public class DataSubjectController {
     @DeleteMapping("/memories")
     public ResponseEntity<Map<String, Object>> eraseMemories(
             @PathVariable String userId,
-            @RequestParam(required = false) String requestedBy) {
+            @RequestParam(required = false) String requestedBy,
+            @RequestHeader(value = VERIFICATION_HEADER, required = false) String verification) {
+        if (!verifier.isVerified(userId, verification)) return unverified(userId);
         var event = erasurePort.eraseMemories(userId, requestedBy);
         log.info("Erased memories for userId={} memories={}", userId, event.memoriesErased());
         return ResponseEntity.ok(toView(event));
@@ -73,7 +90,9 @@ public class DataSubjectController {
     @DeleteMapping
     public ResponseEntity<Map<String, Object>> eraseAccount(
             @PathVariable String userId,
-            @RequestParam(required = false) String requestedBy) {
+            @RequestParam(required = false) String requestedBy,
+            @RequestHeader(value = VERIFICATION_HEADER, required = false) String verification) {
+        if (!verifier.isVerified(userId, verification)) return unverified(userId);
         var event = erasurePort.eraseAccount(userId, requestedBy);
         log.info("Erased account for userId={} total={}", userId, event.totalErased());
         return ResponseEntity.ok(toView(event));
@@ -100,10 +119,23 @@ public class DataSubjectController {
      * @return 200 OK with the export view
      */
     @GetMapping("/export")
-    public ResponseEntity<Map<String, Object>> export(@PathVariable String userId) {
+    public ResponseEntity<Map<String, Object>> export(
+            @PathVariable String userId,
+            @RequestHeader(value = VERIFICATION_HEADER, required = false) String verification) {
+        if (!verifier.isVerified(userId, verification)) return unverified(userId);
         var export = exportPort.exportAll(userId);
         log.info("Exported data for userId={} records={}", userId, export.totalRecords());
         return ResponseEntity.ok(toView(export));
+    }
+
+    /**
+     * 401 for a sensitive data-subject request that failed identity verification. Records the refusal;
+     * never reveals whether the user exists or what data is held.
+     */
+    private ResponseEntity<Map<String, Object>> unverified(String userId) {
+        log.warn("Rejected unverified data-subject request for userId={}", userId);
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("error", "subject identity verification required or invalid"));
     }
 
     private static Map<String, Object> toView(PersonalDataExport export) {
