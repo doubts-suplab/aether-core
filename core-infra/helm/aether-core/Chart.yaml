@@ -1,0 +1,14 @@
+apiVersion: v2
+name: aether-core
+description: Aether Core — Personal Cognitive Engine (individual memory, reasoning, emotional context)
+type: application
+version: 0.1.0
+appVersion: 0.1.0-SNAPSHOT
+keywords:
+  - aether
+  - cognitive-engine
+  - personal-memory
+  - spring-boot
+maintainers:
+  - name: Suplab
+    email: beingsuplab@gmail.com

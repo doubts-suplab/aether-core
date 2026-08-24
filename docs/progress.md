@@ -5,7 +5,7 @@
 
 ---
 
-**Active Phase:** Phase 3 — GDPR + Right to Erasure ✅ core complete (erasure + audit + multi-jurisdiction retention holds + data portability export + storage-limitation retention purge + requester-identity verification)
+**Active Phase:** Phase 6 — Kubernetes + Helm ✅ core complete (multi-stage Dockerfile, single-app Helm chart with HPA + ingress/route + ServiceMonitor, vanilla/AWS/OpenShift value sets, Helm lint+package release workflow)
 > Phases 4 and 5 were prioritised ahead of Phase 3 (GDPR) by explicit decision.
 
 | Phase | Name | Status | Sessions |
@@ -16,9 +16,42 @@
 | 3 | GDPR + Right to Erasure | ✅ Core complete (erasure + audit + holds + export + retention purge + identity verification) | 8 |
 | 4 | Grid Feedback Loop (Kafka) | ✅ Complete | 3 |
 | 5 | Memory Decay + Reinforcement Scheduler | ✅ Complete | 3 |
-| 6 | Kubernetes + Helm | ⏳ Planned | — |
+| 6 | Kubernetes + Helm | ✅ Core complete (Helm chart + HPA + AWS/OpenShift values + release workflow) | 9 |
 
 ---
+
+## Phase 6 — Kubernetes + Helm ✅ (session 9 — Helm chart, HPA, multi-target values, release workflow)
+
+**Commit:** `feat(core): Kubernetes Helm chart — HPA, AWS/OpenShift value sets, release workflow`
+
+The Dockerfile and raw k8s manifests already existed; Phase 6 adds the production Helm chart so Core
+deploys the same way as Aether Grid (vanilla K8s, AWS EKS, OpenShift).
+
+### What was done
+
+**Helm chart `core-infra/helm/aether-core/`** (single-app, mirroring Grid's hardened chart):
+- `Chart.yaml`, `values.yaml`, plus `values-aws.yaml` (ALB Ingress + IRSA service-account role) and
+  `values-openshift.yaml` (Route + SCC-friendly securityContext, ServiceMonitor on).
+- Templates: `_helpers.tpl` (names/labels/image/SA helpers), `namespace`, `serviceaccount`
+  (`automountServiceAccountToken: false`), `configmap` (non-secret runtime config), `service`
+  (ClusterIP 8082), `deployment` (rolling update, topology spread, non-root uid 1000, read-only rootfs,
+  dropped caps, startup/liveness/readiness probes, secret + configmap env, config-checksum restart),
+  `hpa` (min 2 / max 4 / CPU 70%), `ingress`, `route` (OpenShift), `servicemonitor`, `NOTES.txt`.
+- Secrets are **never** in the chart — the deployment reads a pre-existing `existingSecret`
+  (`postgres-*`, optional `data-subject-verification-secret`) via External Secrets Operator / kubectl.
+
+**CI:** `.github/workflows/helm-release.yml` — lints the chart against all three value sets + a
+`helm template` dry-run on every change under `core-infra/helm/**`, then packages and pushes the chart
+to GHCR as an OCI artifact on `main`. The existing `docker-build.yml` builds the image.
+
+### Constraints upheld
+- No hardcoded secrets — all credentials via a referenced Kubernetes Secret.
+- Non-root (uid 1000), read-only root filesystem, all capabilities dropped, SA token disabled.
+- Config drift triggers a rollout (`checksum/config` annotation).
+
+### Verification
+- Pure-YAML files (Chart/values/workflow) validated; all template `include` helpers are defined.
+  `helm lint` + `helm template` run in CI (Helm is not available in this build environment).
 
 ## Phase 0 — Scaffold ✅
 

@@ -114,17 +114,17 @@
 
 ---
 
-## Phase 6 — Kubernetes + Helm
+## Phase 6 — Kubernetes + Helm ✅ (core complete)
 
 **Goal:** Production-ready deployment for Core on Kubernetes (vanilla, AWS EKS, OpenShift).
 
 | Deliverable | Status |
 |---|---|
-| `core-api/Dockerfile` (multi-stage, Temurin 21 JRE, non-root uid 1000) | ⏳ |
-| Helm chart: `core-infra/helm/aether-core/` | ⏳ |
-| `values.yaml`, `values-aws.yaml`, `values-openshift.yaml` | ⏳ |
-| GitHub Actions Docker build + Helm release workflows | ⏳ |
-| HPA (min 2, max 4 replicas) | ⏳ |
+| `core-api/Dockerfile` (multi-stage, Temurin 21 JRE, non-root uid 1000) | ✅ |
+| Helm chart: `core-infra/helm/aether-core/` — namespace, serviceaccount (token off), configmap, service, deployment, HPA, ingress, route, servicemonitor, NOTES | ✅ |
+| `values.yaml`, `values-aws.yaml` (ALB + IRSA), `values-openshift.yaml` (Route + SCC) | ✅ |
+| GitHub Actions Docker build (`docker-build.yml`) + Helm release workflow (`helm-release.yml`: lint all value sets + template dry-run, package + push OCI to GHCR on main) | ✅ |
+| HPA (min 2, max 4 replicas, CPU 70%) | ✅ |
 
 ---
 

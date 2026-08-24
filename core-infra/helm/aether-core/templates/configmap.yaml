@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aether-core-config
+  namespace: {{ include "aether-core.namespace" . }}
+  labels:
+    {{- include "aether-core.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cognitive-engine
+data:
+  kafka-bootstrap-servers: {{ .Values.app.config.kafkaBootstrapServers | quote }}
+  ollama-base-url: {{ .Values.app.config.ollamaBaseUrl | quote }}
+  data-subject-require-verification: {{ .Values.app.config.dataSubjectRequireVerification | quote }}
+  spring-profiles-active: {{ .Values.app.config.springProfilesActive | quote }}
