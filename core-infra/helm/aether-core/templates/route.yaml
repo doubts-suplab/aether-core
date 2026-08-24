@@ -1,0 +1,22 @@
+{{- if .Values.openshift.enabled -}}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: aether-core
+  namespace: {{ include "aether-core.namespace" . }}
+  labels:
+    {{- include "aether-core.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cognitive-engine
+spec:
+  host: {{ .Values.route.host }}
+  to:
+    kind: Service
+    name: aether-core
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: {{ .Values.route.termination }}
+    insecureEdgeTerminationPolicy: {{ .Values.route.insecureEdgeTerminationPolicy }}
+  wildcardPolicy: None
+{{- end }}

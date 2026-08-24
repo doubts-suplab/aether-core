@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: aether-core
+  namespace: {{ include "aether-core.namespace" . }}
+  labels:
+    {{- include "aether-core.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cognitive-engine
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: aether-core
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: 8082
+      targetPort: 8082
+      protocol: TCP

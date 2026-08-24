@@ -1,0 +1,24 @@
+openshift:
+  enabled: true
+
+global:
+  imageRegistry: "quay.io/suplab"
+
+# No standard Ingress on OpenShift — traffic enters via Routes.
+ingress:
+  enabled: false
+
+# OpenShift Route config — rendered when openshift.enabled is true.
+route:
+  host: "core.aether.apps.cluster.example.com"
+  termination: edge
+  insecureEdgeTerminationPolicy: Redirect
+
+app:
+  serviceAccount:
+    # OpenShift SCC binding is done via RoleBinding, not SA annotation.
+    annotations: {}
+
+# OpenShift ships the Prometheus Operator — enable ServiceMonitor.
+serviceMonitor:
+  enabled: true

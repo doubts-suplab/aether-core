@@ -199,7 +199,7 @@
       </div>
       <div>
         <h3>Docker + Migrations</h3>
-        <p>Docker Compose (postgres-core on 5433, aether-core on 8082). Standalone Flyway migrations. Kubernetes Helm chart planned in Phase 6.</p>
+        <p>Docker Compose (postgres-core on 5433, aether-core on 8082). Standalone Flyway migrations. Kubernetes Helm chart (<code>core-infra/helm/aether-core/</code>) with HPA, ingress/route, ServiceMonitor, and vanilla/AWS/OpenShift value sets.</p>
       </div>
     </div>
   </div>
@@ -328,10 +328,10 @@
       <span class="status-badge done">Complete</span>
     </div>
     <div class="roadmap-item">
-      <div class="dot planned"></div>
+      <div class="dot done"></div>
       <div class="phase-label">Phase 6</div>
-      <div class="phase-name">Kubernetes + Helm — multi-platform deployment (vanilla K8s, EKS, OpenShift)</div>
-      <span class="status-badge planned">Planned</span>
+      <div class="phase-name">Kubernetes + Helm — Helm chart (HPA, ingress/route, ServiceMonitor) with vanilla/AWS-EKS/OpenShift value sets + a Helm lint+package release workflow</div>
+      <span class="status-badge done">Core Complete</span>
     </div>
   </div>
 </section>

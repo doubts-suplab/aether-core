@@ -1,0 +1,72 @@
+global:
+  imageRegistry: "ghcr.io/suplab"
+  imagePullPolicy: Always
+  nameOverride: ""
+  namespaceOverride: "aether-core"
+
+# OpenShift-specific toggle.
+# When true: render Route instead of Ingress, omit runAsUser/fsGroup from the
+# securityContext (OpenShift assigns UIDs via SCC), and prefer Route hosts.
+openshift:
+  enabled: false
+
+# OpenShift Route config — only evaluated when openshift.enabled is true.
+route:
+  host: "core.aether.apps.cluster.example.com"
+  termination: edge
+  insecureEdgeTerminationPolicy: Redirect
+
+# Standard K8s Ingress — mutually exclusive with openshift.enabled.
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations: {}
+  host: core.aether.local
+  path: /
+  tls: []
+
+# Prometheus ServiceMonitor (requires prometheus-operator CRD).
+serviceMonitor:
+  enabled: false
+  namespace: monitoring
+  interval: 30s
+
+# ─── core-api (Personal Cognitive Engine, port 8082) ──────────────────────────
+app:
+  image:
+    repository: "ghcr.io/suplab/core-api"
+    tag: "0.1.0-SNAPSHOT"
+
+  replicaCount: 2
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+
+  serviceAccount:
+    create: true
+    # Annotations are merged in at deploy time; EKS IRSA goes in values-aws.yaml.
+    annotations: {}
+
+  # ConfigMap values — non-sensitive runtime configuration.
+  config:
+    kafkaBootstrapServers: "kafka:9092"
+    ollamaBaseUrl: "http://ollama:11434"
+    dataSubjectRequireVerification: "false"
+    springProfilesActive: "k8s"
+
+  # Name of a pre-existing Secret (created by External Secrets Operator or
+  # manually via kubectl). Never embed literal secret values here.
+  # Expected keys: postgres-url, postgres-user, postgres-password,
+  # data-subject-verification-secret (optional).
+  secrets:
+    existingSecret: "aether-core-secrets"

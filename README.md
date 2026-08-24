@@ -17,6 +17,22 @@ cd ../.. && mvn spring-boot:run -pl core-api
 # Health:   http://localhost:8082/actuator/health
 ```
 
+### Kubernetes (Helm)
+
+```bash
+# vanilla K8s (port-forward for access)
+helm install core core-infra/helm/aether-core
+
+# AWS EKS (ALB Ingress + IRSA) / OpenShift (Route + SCC)
+helm install core core-infra/helm/aether-core -f core-infra/helm/aether-core/values-aws.yaml
+helm install core core-infra/helm/aether-core -f core-infra/helm/aether-core/values-openshift.yaml
+```
+
+The chart ships an HPA (min 2 / max 4 / CPU 70%), ingress/route, and a Prometheus ServiceMonitor.
+Secrets are **not** in the chart — create the referenced `existingSecret` (keys: `postgres-url`,
+`postgres-user`, `postgres-password`, optional `data-subject-verification-secret`) via External
+Secrets Operator or `kubectl` before installing.
+
 ## Modules
 
 | Module | Purpose |
@@ -24,7 +40,7 @@ cd ../.. && mvn spring-boot:run -pl core-api
 | `core-domain` | Domain types: PersonalMemory, CognitiveSession, PersonalContext, port interfaces |
 | `core-memory` | pgvector store + Ollama embedding service (all-MiniLM-L6-v2, 384-dim) |
 | `core-api` | Spring Boot REST API (port 8082) + Flyway migrations |
-| `core-infra` | Docker Compose, standalone Flyway migrations |
+| `core-infra` | Docker Compose, standalone Flyway migrations, Kubernetes Helm chart (`helm/aether-core/`) |
 
 ## Key API Endpoints
 

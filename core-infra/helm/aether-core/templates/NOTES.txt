@@ -1,0 +1,55 @@
+Aether Core (Personal Cognitive Engine) has been deployed successfully.
+
+Namespace : {{ include "aether-core.namespace" . }}
+Release   : {{ .Release.Name }}
+Version   : {{ .Chart.AppVersion }}
+
+─── Pod Status ───────────────────────────────────────────────────────────────
+
+  kubectl get pods -n {{ include "aether-core.namespace" . }}
+
+─── Logs ─────────────────────────────────────────────────────────────────────
+
+  kubectl logs -n {{ include "aether-core.namespace" . }} \
+    -l app.kubernetes.io/name=aether-core --tail=100 -f
+
+─── Access ───────────────────────────────────────────────────────────────────
+{{- if .Values.openshift.enabled }}
+
+  OpenShift Route is provisioned by the cluster router:
+    https://{{ .Values.route.host }}
+
+{{- else if .Values.ingress.enabled }}
+
+  Ingress is enabled.  Wait for the load-balancer address:
+
+    kubectl get ingress -n {{ include "aether-core.namespace" . }}
+
+  Personal Cognitive Engine (core-api):
+    http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}
+
+{{- else }}
+
+  Ingress is disabled.  Use port-forwarding for local access:
+
+    kubectl port-forward -n {{ include "aether-core.namespace" . }} \
+      svc/aether-core 8082:8082
+    # then open: http://localhost:8082/actuator/health
+
+{{- end }}
+
+─── HPA Status ───────────────────────────────────────────────────────────────
+
+  kubectl get hpa -n {{ include "aether-core.namespace" . }}
+
+─── Secrets ──────────────────────────────────────────────────────────────────
+
+  Secrets are NOT managed by this chart.  Ensure the following Secret exists in
+  namespace {{ include "aether-core.namespace" . }} before pods will start (use
+  External Secrets Operator or `kubectl create secret`):
+
+    {{ .Values.app.secrets.existingSecret }}
+
+  Expected keys: postgres-url, postgres-user, postgres-password,
+  data-subject-verification-secret (optional — only when
+  DATA_SUBJECT_REQUIRE_VERIFICATION=true).
